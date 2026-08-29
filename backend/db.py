@@ -87,6 +87,87 @@ def list_users(conn):
     return [row_to_dict(row) for row in rows]
 
 
+def get_user(conn, username):
+    """Fetch one user by username, or None when not found.
+
+    Why this exists: the API needs to answer "does this user exist?" (for
+    404s) and the update flow needs the current values to merge into.
+    """
+    row = conn.execute(
+        "SELECT * FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def create_user(conn, user):
+    """Insert one full user row.
+
+    Why it takes a complete dict (uuids and created_at included): deciding
+    what values a new user gets is business logic that belongs to the
+    service layer; this function only knows how to store what it is given.
+    """
+    conn.execute(
+        """
+        INSERT INTO users
+            (username, status, expire, allowed_inbounds, allowed_outbounds,
+             uuids, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user["username"],
+            user["status"],
+            user["expire"],
+            json.dumps(user["allowed_inbounds"]),
+            json.dumps(user["allowed_outbounds"]),
+            json.dumps(user["uuids"]),
+            user["note"],
+            user["created_at"],
+        ),
+    )
+    conn.commit()
+
+
+def replace_user(conn, user):
+    """Overwrite every editable column of an existing user row.
+
+    Why a full overwrite instead of a partial UPDATE: the service layer
+    merges partial changes into a complete user first, so this stays one
+    fixed SQL statement with no dynamic column list to build.
+    """
+    conn.execute(
+        """
+        UPDATE users SET
+            status = ?, expire = ?, allowed_inbounds = ?, allowed_outbounds = ?,
+            uuids = ?, note = ?, created_at = ?
+        WHERE username = ?
+        """,
+        (
+            user["status"],
+            user["expire"],
+            json.dumps(user["allowed_inbounds"]),
+            json.dumps(user["allowed_outbounds"]),
+            json.dumps(user["uuids"]),
+            user["note"],
+            user["created_at"],
+            user["username"],
+        ),
+    )
+    conn.commit()
+
+
+def delete_user(conn, username):
+    """Remove a user row; return True if one was deleted, False if not found.
+
+    Why a return value: the router turns False into a 404 without needing
+    a separate existence check first.
+    """
+    cursor = conn.execute(
+        "DELETE FROM users WHERE username = ?", (username,)
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 def row_to_dict(row):
     """Convert one SQLite row to a plain dict and decode its JSON columns.
 

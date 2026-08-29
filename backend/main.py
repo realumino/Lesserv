@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from backend import db
+from backend.routers import users
 
 DB_PATH = "data/panel.db"
 
@@ -32,15 +33,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lesserv", lifespan=lifespan)
+app.include_router(users.router)
 
 
 @app.get("/api/health")
 def health():
     """Cheap check that the server is alive."""
     return {"status": "ok"}
-
-
-@app.get("/api/users")
-def get_users():
-    """List all users from the database."""
-    return db.list_users(app.state.db)
