@@ -15,14 +15,15 @@ two places in the template:
 
 Nothing else is ever generated, validated, or interpreted.
 
-## Current status: Milestone 2 done, Milestone 3 next
+## Current status: Milestone 3 done, Milestone 4 next
 
 | # | What | Status |
 |---|------|--------|
 | 0 | Skeleton: FastAPI + SQLite + GET /api/users (seeded demo user) | done (commit f3952e4) |
 | 1 | Full user CRUD + pydantic models (backend/models.py, backend/routers/users.py, ensure_uuids) | done |
 | 2 | Fill template's `routing.rules` + VLESS `clients` from DB users; run/restart Xray subprocess | done |
-| 3 | Endpoints: GET /api/inbounds, /api/outbounds (tags read from template), GET /api/status, POST /api/config (replace template) | NEXT |
+| 3 | Endpoints: GET /api/inbounds, /api/outbounds (tags read from template), GET /api/status, POST /api/config (replace template) | done |
+| 4 | React frontend (Vite, plain JS): user table + add/edit form with inbound/outbound checkboxes | NEXT |
 | 4 | React frontend (Vite, plain JS): user table + add/edit form with inbound/outbound checkboxes | pending |
 | 5 | Share links (vless:// URIs) — optional stretch | pending |
 | later | Xray gRPC stats API, auth, expiry/quota jobs, Docker | deferred |

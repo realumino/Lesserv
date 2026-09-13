@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from backend import db
-from backend.routers import users
+from backend.routers import system, users
 from backend.services import xray_service
 
 DB_PATH = "data/panel.db"
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lesserv", lifespan=lifespan)
+app.include_router(system.router)
 app.include_router(users.router)
 
 

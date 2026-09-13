@@ -22,10 +22,11 @@ differently from other panels:
   same server — per-user exit selection, without writing a routing rule per
   user.
 
-**Current state (after milestone 2):** the panel stores users in SQLite,
-serves a REST API for user CRUD, and after every user change regenerates
-the Xray config (filling only the two template slots) and restarts the
-Xray subprocess.
+**Current state (after milestone 3):** the panel stores users in SQLite,
+serves a REST API for user CRUD, after every user change regenerates the
+Xray config and restarts Xray, and exposes endpoints for the template
+structure (inbounds/outbounds tags), system health, and template
+replacement via the API.
 
 ## The layers
 
@@ -69,6 +70,8 @@ Xray process
 And the pure pieces:
 
 - `backend/models.py` — pydantic shapes (the API contract), used by every layer.
+- `backend/routers/system.py` — system endpoints: inbounds/outbounds tag lists,
+  composite status, and config replacement via POST.
 - `backend/core/allocator.py` — the copied `vless_allocator` brain, pure and
   dependency-free. Verbatim copy from the sibling repo; panel policy never
   goes in here.
@@ -150,6 +153,32 @@ name, this file is where to look.
 
 Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
 
+### backend/routers/system.py — system info and config management
+
+Four endpoints that the React frontend (milestone 4) will use to populate
+inbound/outbound checkbox lists and show the status bar. All share
+`prefix="/api"` and `tags=["system"]`.
+
+| Method | Path | Success | Errors |
+|---|---|---|---|
+| GET | /api/inbounds | 200 `[{tag, protocol}]` | 503 template not loaded |
+| GET | /api/outbounds | 200 `[tag string]` | 503 template not loaded |
+| GET | /api/status | 200 `{template_loaded, xray_running, xray_pid, user_count}` | — |
+| POST | /api/config | 200 `{"message": "config updated"}` | 422 invalid JSON body |
+
+- `/api/inbounds` and `/api/outbounds` call `xray_service.load_template()`
+  and then `config_service.inbound_summaries()` / `outbound_tags()`. They
+  return 503 when the template is missing (an empty list would conflate
+  "zero inbounds exist" with "no template loaded").
+- `/api/status` bundles `load_template()`, `xray_service.status()`, and
+  `db.list_users()` into one composite response so the frontend can render
+  a status bar with one HTTP call.
+- `POST /api/config` accepts a raw JSON body (the template is opaque — the
+  panel never validates its structure), writes it atomically via
+  `xray_service.save_template()`, and calls `xray_service.sync()` to
+  regenerate the config and restart Xray. A fresh install gets its first
+  template this way instead of dropping a file into `config/`.
+
 ### backend/services/user_service.py — the business rules
 
 The rules that are neither HTTP nor SQL live here:
@@ -211,6 +240,11 @@ down.
 
 - `load_template()` — reads `settings.TEMPLATE_PATH`; `None` when the file
   is missing or not valid JSON (both logged as warnings).
+- `save_template(content)` — the write counterpart of `load_template()`.
+  Writes `content` (a dict) to `settings.TEMPLATE_PATH` atomically (temp
+  file + `os.replace`). Called by `POST /api/config`; the content is always
+  a valid JSON-serialisable dict at this point because FastAPI rejects
+  non-JSON bodies as 422.
 - `write_config(config)` — writes to `settings.XRAY_CONFIG_PATH`
   atomically: dump to a `.tmp` file, then `os.replace`, so Xray can never
   read a half-written config.
@@ -223,6 +257,9 @@ down.
 - `stop()` — terminate + 5s wait + kill. No-op when nothing runs.
 - `restart()` — stop then start; Xray reads its config only at startup, so
   every rewrite needs a bounce (no gRPC API in v1).
+- `status()` — returns `{"running": bool, "pid": int | None}` by reading
+  the module-level `_process` handle. Read-only, no lock, used by
+  `GET /api/status` to show process health.
 - `sync(conn)` — the single entry point: load template, list users, build
   the config, log the allocator warnings, write, restart. Called by
   `user_service` after every user change and by `main` at startup. A
@@ -302,6 +339,11 @@ All tests use stdlib `unittest` (no extra deps).
   fill: clients injected, rules + BLOCK catch-all replaced, disabled users
   excluded, unused VLESS inbounds emptied, everything else preserved
   verbatim, and the caller's template dict never mutated.
+- `tests/test_system.py` — tests the two new `xray_service` functions
+  (`save_template` atomic write and directory creation; `status` for
+  running/exited/none states), plus the four router endpoints called
+  directly with mocked dependencies (503 on missing template, correct
+  summaries/tags, composite status response, config write-and-sync flow).
 
 ## Life of one request: POST /api/users
 

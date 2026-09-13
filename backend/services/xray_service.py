@@ -48,6 +48,22 @@ def load_template():
             return None
 
 
+def save_template(content):
+    """Atomically write a new template to the template path.
+
+    Why this exists: POST /api/config needs a counterpart to load_template().
+    A temp file + os.replace keeps the write atomic so nothing reads a
+    half-written file. The caller is responsible for supplying valid JSON
+    — the template is opaque; we never validate its structure.
+    """
+    path = settings.TEMPLATE_PATH
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(content, handle, indent=2)
+    os.replace(tmp_path, path)
+
+
 def write_config(config):
     """Atomically write the filled config to the path Xray will read.
 
@@ -132,6 +148,20 @@ def restart():
     """
     stop()
     start()
+
+
+def status():
+    """Return the Xray subprocess health: whether it is running and its pid.
+
+    Why this exists: GET /api/status needs a simple snapshot of the process
+    without touching the lock or triggering side effects. A read of the
+    module-level reference is atomic in CPython.
+    """
+    global _process
+    proc = _process
+    if proc is not None and proc.poll() is None:
+        return {"running": True, "pid": proc.pid}
+    return {"running": False, "pid": None}
 
 
 def sync(conn):
