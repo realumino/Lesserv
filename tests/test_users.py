@@ -9,6 +9,7 @@ Run from the repo root (with the lesserv env active):
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from pydantic import ValidationError
 
@@ -81,6 +82,9 @@ class TestEnsureUuids(unittest.TestCase):
 class TestDbCrud(unittest.TestCase):
     def setUp(self):
         self.conn = _fresh_conn()
+        patcher = mock.patch("backend.services.user_service.xray_service.sync")
+        self.sync_mock = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self.conn.close()
@@ -125,6 +129,37 @@ class TestDbCrud(unittest.TestCase):
         self.assertIsNone(
             user_service.update_user(self.conn, "ghost", UserUpdate(note="x"))
         )
+
+    def test_create_triggers_sync(self):
+        user_service.create_user(self.conn, UserCreate(username="bob"))
+
+        self.sync_mock.assert_called_once_with(self.conn)
+
+    def test_update_triggers_sync(self):
+        user_service.create_user(self.conn, UserCreate(username="bob"))
+        self.sync_mock.reset_mock()
+
+        user_service.update_user(self.conn, "bob", UserUpdate(note="new"))
+
+        self.sync_mock.assert_called_once_with(self.conn)
+
+    def test_failed_update_does_not_sync(self):
+        user_service.update_user(self.conn, "ghost", UserUpdate(note="x"))
+
+        self.sync_mock.assert_not_called()
+
+    def test_delete_triggers_sync(self):
+        user_service.create_user(self.conn, UserCreate(username="bob"))
+        self.sync_mock.reset_mock()
+
+        user_service.delete_user(self.conn, "bob")
+
+        self.sync_mock.assert_called_once_with(self.conn)
+
+    def test_failed_delete_does_not_sync(self):
+        user_service.delete_user(self.conn, "ghost")
+
+        self.sync_mock.assert_not_called()
 
 
 if __name__ == "__main__":

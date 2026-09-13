@@ -8,7 +8,10 @@ existing panels: per-user outbound selection via email routing
 ## Project state
 
 Roadmap and current milestone status live in docs/PLAN.md. Always read it
-at the start of a session to know where the project stands.
+at the start of a session to know where the project stands. The code
+walkthrough (how each module works, request flows, concepts) lives in
+docs/ARCHITECTURE.md — update it in the same commit that changes code;
+wrong documentation is worse than none.
 
 ## Run it
 
@@ -21,11 +24,17 @@ at the start of a session to know where the project stands.
 - Backend: FastAPI + plain `sqlite3` (no ORM). JSON columns for
   allowed_inbounds / allowed_outbounds / uuids.
 - v1 user sync = regenerate full config + restart Xray. No Xray gRPC API in v1 (deferred).
+- Xray config is an opaque template: the panel only FILLS routing.rules
+  and VLESS inbounds' settings.clients. Never generate, validate, or
+/  interpret the rest of it.
 - Only VLESS. UUID per (user, outbound) pair, stable across changes.
 - No auth in v1.
 - File map: backend/main.py (app + lifespan), backend/db.py (all SQLite),
-  backend/services/* (business logic), backend/core/allocator.py (copy of
-  vless_allocator from sibling repo xray_multi_inout_generator).
+  backend/services/* (business logic: user_service, config_service,
+  xray_service), backend/core/allocator.py (copy of vless_allocator from
+  sibling repo xray_multi_inout_generator), backend/settings.py
+  (env-overridable paths: template/config/binary). Template goes in
+  config/ (gitignored dir, user-provided), generated config in data/.
 
 ## Conventions (user requirement — non-negotiable)
 

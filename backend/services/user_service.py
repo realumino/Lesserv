@@ -2,9 +2,9 @@
 
 Why this layer exists: routers should only handle HTTP concerns (status
 codes, JSON in/out) and db.py only knows SQL. Everything that is a *rule* —
-how UUIDs are minted, what "update" means — lives here, so milestone 2 can
-add "rebuild config + restart Xray after any change" without touching the
-routers.
+how UUIDs are minted, what "update" means — lives here. After every
+successful mutation this module calls xray_service.sync so the running
+Xray config always matches the database.
 """
 
 import time
@@ -12,6 +12,7 @@ import uuid
 
 from backend import db
 from backend.models import UserCreate, UserUpdate
+from backend.services import xray_service
 
 
 def ensure_uuids(username, outbound_tags, uuids):
@@ -46,6 +47,7 @@ def create_user(conn, data: UserCreate):
         "created_at": int(time.time()),
     }
     db.create_user(conn, user)
+    xray_service.sync(conn)
     return user
 
 
@@ -70,9 +72,16 @@ def update_user(conn, username, data: UserUpdate):
     user["uuids"] = ensure_uuids(username, user["allowed_outbounds"],
                                  user["uuids"])
     db.replace_user(conn, user)
+    xray_service.sync(conn)
     return user
 
 
 def delete_user(conn, username):
-    """Remove a user; True if deleted, False if they did not exist."""
-    return db.delete_user(conn, username)
+    """Remove a user; True if deleted, False if they did not exist.
+
+    Why sync only runs on a real deletion: a 404 must not bounce Xray.
+    """
+    deleted = db.delete_user(conn, username)
+    if deleted:
+        xray_service.sync(conn)
+    return deleted
