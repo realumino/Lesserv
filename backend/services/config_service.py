@@ -61,8 +61,12 @@ def inbound_summaries(template):
 
 
 def outbound_tags(template):
-    """Return the tag strings of every outbound in the template."""
-    return [outbound["tag"] for outbound in template["outbounds"]]
+    """Return the tag strings of every regular outbound (BLOCK excluded).
+
+    Why BLOCK is excluded: it is a system catch-all, not a real exit node;
+    the allocator must not generate a regexp:.*@BLOCK$ rule for it.
+    """
+    return [o["tag"] for o in template["outbounds"] if o["tag"] != "BLOCK"]
 
 
 def outbound_summaries(template):
@@ -84,16 +88,14 @@ def clients_and_rules(users, template):
     Why the BLOCK catch-all is appended here and not inside the allocator:
     the allocator is a verbatim copy from the sibling repo; panel policy
     stays in this module. The catch-all drops traffic whose email matched
-    no per-outbound rule.
+    no per-outbound rule. BLOCK is guaranteed to exist by the time this
+    runs (build_config auto-injects it if absent), so there is no else.
     """
     tags = outbound_tags(template)
     clients, rules, warnings = allocator.allocate(
         user_permissions(users), inbound_summaries(template), tags, uuids_map(users)
     )
-    if "BLOCK" in tags:
-        rules.append({"outboundTag": "BLOCK"})
-    else:
-        warnings.append("no BLOCK outbound; skipping catch-all rule")
+    rules.append({"outboundTag": "BLOCK"})
     return clients, rules, warnings
 
 
@@ -109,9 +111,20 @@ def build_config(template, users):
     their own routing.rules, the generated rules are appended after them so
     user-authored rules stay at the front and the BLOCK catch-all still
     trails at the end.
+
+    Why BLOCK is auto-injected: every Xray config needs a catch-all
+    outbound; requiring the user to add one manually is a papercut. The
+    panel injects a blackhole BLOCK outbound when none exists.
     """
     config = copy.deepcopy(template)
-    clients, rules, warnings = clients_and_rules(users, template)
+    block_exists = any(
+        o.get("tag") == "BLOCK" for o in config.get("outbounds", [])
+    )
+    if not block_exists:
+        config.setdefault("outbounds", []).append(
+            {"tag": "BLOCK", "protocol": "blackhole"}
+        )
+    clients, rules, warnings = clients_and_rules(users, config)
     for inbound in config["inbounds"]:
         if inbound["protocol"] != "vless":
             continue

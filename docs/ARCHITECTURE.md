@@ -220,21 +220,24 @@ This is what makes the milestone testable without a running server.
   per inbound. `network` and `security` come from `streamSettings` (empty
   string when absent) so the frontend can label checkboxes.
 - `outbound_tags(template)` — returns the tag strings of the outbounds for
-  the allocator (which only needs tags).
+  the allocator (which only needs tags). BLOCK is excluded because it is a
+  system catch-all, not a routable exit node — no `regexp:.*@BLOCK$` rule
+  is ever generated.
 - `outbound_summaries(template)` — returns `[{tag, protocol}]` for the
   frontend via `/api/outbounds`.
 - `clients_and_rules(users, template)` — calls the allocator, then appends
   the trailing catch-all rule `{"outboundTag": "BLOCK"}` that drops any
   traffic whose email matched no rule. The catch-all lives here (not in
   the allocator) because it is panel policy and the allocator must stay a
-  verbatim copy. If the template has no `BLOCK` outbound, a warning is
-  added instead.
+  verbatim copy. BLOCK is guaranteed to exist by this point because
+  `build_config` auto-injects it.
 - `build_config(template, users)` — the entry point: `copy.deepcopy`s the
-  template, replaces `settings.clients` of every VLESS inbound (an empty
-  list when nobody is allocated to it; non-VLESS inbounds untouched) and
-  appends generated rules to `routing.rules` (auto-creating the `routing`
-  section when absent, extending instead of replacing so pre-existing user
-  rules survive). Returns `(config, warnings)`.
+  template, auto-injects a `{"tag": "BLOCK", "protocol": "blackhole"}`
+  outbound when none exists, replaces `settings.clients` of every VLESS
+  inbound (an empty list when nobody is allocated to it; non-VLESS inbounds
+  untouched) and appends generated rules to `routing.rules` (auto-creating
+  the `routing` section when absent, extending instead of replacing so
+  pre-existing user rules survive). Returns `(config, warnings)`.
 
 Everything else in the template is preserved exactly — the opaque-template
 rule. The copy also guarantees the caller's template dict survives

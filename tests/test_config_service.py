@@ -66,7 +66,6 @@ class TestBuildConfig(unittest.TestCase):
             [
                 {},
                 {"user": ["regexp:.*@OUTBOUND$"], "outboundTag": "OUTBOUND"},
-                {"user": ["regexp:.*@BLOCK$"], "outboundTag": "BLOCK"},
                 {"outboundTag": "BLOCK"},
             ],
         )
@@ -111,14 +110,23 @@ class TestBuildConfig(unittest.TestCase):
             [{"id": "u1", "email": "alice@OUTBOUND"}],
         )
 
-    def test_no_block_outbound_skips_catch_all(self):
+    def test_block_auto_injected_and_catch_all_present(self):
         template = _template()
         template["outbounds"] = [{"tag": "OUTBOUND", "protocol": "wireguard"}]
 
         config, warnings = config_service.build_config(template, [])
 
-        self.assertIn("no BLOCK outbound; skipping catch-all rule", warnings)
-        self.assertEqual(len(config["routing"]["rules"]), 2)
+        tags = [o["tag"] for o in config["outbounds"]]
+        self.assertIn("BLOCK", tags)
+        self.assertNotIn("no BLOCK", warnings)
+        self.assertEqual(
+            config["routing"]["rules"],
+            [
+                {},
+                {"user": ["regexp:.*@OUTBOUND$"], "outboundTag": "OUTBOUND"},
+                {"outboundTag": "BLOCK"},
+            ],
+        )
 
     def test_missing_routing_is_auto_created(self):
         template = _template()
@@ -153,6 +161,14 @@ class TestBuildConfig(unittest.TestCase):
 
         self.assertEqual(config["routing"]["domainStrategy"], "IPOnDemand")
         self.assertIn("rules", config["routing"])
+
+    def test_outbound_tags_excludes_block(self):
+        template = _template()
+
+        tags = config_service.outbound_tags(template)
+
+        self.assertNotIn("BLOCK", tags)
+        self.assertIn("OUTBOUND", tags)
 
 
 if __name__ == "__main__":
