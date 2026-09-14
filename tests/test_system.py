@@ -19,7 +19,11 @@ def _fixture_template():
         "log": {"loglevel": "debug"},
         "routing": {"rules": []},
         "inbounds": [
-            {"tag": "REALITY", "protocol": "vless"},
+            {
+                "tag": "REALITY",
+                "protocol": "vless",
+                "streamSettings": {"network": "tcp", "security": "reality"},
+            },
             {"tag": "HTTP_ONLY", "protocol": "http"},
         ],
         "outbounds": [
@@ -107,8 +111,10 @@ class TestSystemRouter(unittest.TestCase):
         self.assertEqual(
             result,
             [
-                {"tag": "REALITY", "protocol": "vless"},
-                {"tag": "HTTP_ONLY", "protocol": "http"},
+                {"tag": "REALITY", "protocol": "vless",
+                 "network": "tcp", "security": "reality"},
+                {"tag": "HTTP_ONLY", "protocol": "http",
+                 "network": "", "security": ""},
             ],
         )
 
@@ -123,13 +129,19 @@ class TestSystemRouter(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
 
     @mock.patch("backend.routers.system.xray_service.load_template")
-    def test_outbounds_returns_tags(self, mock_load):
+    def test_outbounds_returns_summaries(self, mock_load):
         mock_load.return_value = _fixture_template()
 
         from backend.routers.system import get_outbounds
         result = get_outbounds()
 
-        self.assertEqual(result, ["JAPAN", "BLOCK"])
+        self.assertEqual(
+            result,
+            [
+                {"tag": "JAPAN", "protocol": "wireguard"},
+                {"tag": "BLOCK", "protocol": "blackhole"},
+            ],
+        )
 
     @mock.patch("backend.routers.system.xray_service.load_template")
     def test_outbounds_503_when_no_template(self, mock_load):

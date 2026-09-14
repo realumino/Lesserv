@@ -38,16 +38,11 @@ def get_inbounds():
 
 @router.get("/outbounds")
 def get_outbounds():
-    """Return every outbound tag from the loaded template.
-
-    Why a list of strings (not objects): outbounds have no protocol
-    distinction the frontend cares about — the user checkboxes just need
-    the tag names.
-    """
+    """Return every outbound's tag and protocol from the loaded template."""
     template = xray_service.load_template()
     if template is None:
         raise HTTPException(status_code=503, detail="template not loaded")
-    return config_service.outbound_tags(template)
+    return config_service.outbound_summaries(template)
 
 
 @router.get("/status")

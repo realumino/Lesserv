@@ -42,20 +42,40 @@ def uuids_map(users):
 
 
 def inbound_summaries(template):
-    """Extract {tag, protocol} from every inbound in the template.
+    """Extract {tag, protocol, network, security} from every inbound.
 
-    Why this exists: the allocator only needs tag + protocol; handing it
-    full inbound dicts would couple it to the template's shape.
+    Why this exists: the allocator only needs tag + protocol; the API
+    endpoint also exposes network and security so the frontend can show
+    richer checkboxes. Extra fields in the dict don't hurt the allocator.
     """
-    return [
-        {"tag": inbound["tag"], "protocol": inbound["protocol"]}
-        for inbound in template["inbounds"]
-    ]
+    result = []
+    for inbound in template["inbounds"]:
+        stream = inbound.get("streamSettings") or {}
+        result.append({
+            "tag": inbound["tag"],
+            "protocol": inbound["protocol"],
+            "network": stream.get("network", ""),
+            "security": stream.get("security", ""),
+        })
+    return result
 
 
 def outbound_tags(template):
     """Return the tag strings of every outbound in the template."""
     return [outbound["tag"] for outbound in template["outbounds"]]
+
+
+def outbound_summaries(template):
+    """Extract {tag, protocol} from every outbound in the template.
+
+    Why this exists: the allocator needs just the tag strings, but the
+    API endpoint also exposes the protocol so the frontend can show
+    richer checkboxes.
+    """
+    return [
+        {"tag": outbound["tag"], "protocol": outbound["protocol"]}
+        for outbound in template["outbounds"]
+    ]
 
 
 def clients_and_rules(users, template):

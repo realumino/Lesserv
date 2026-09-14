@@ -161,15 +161,18 @@ inbound/outbound checkbox lists and show the status bar. All share
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| GET | /api/inbounds | 200 `[{tag, protocol}]` | 503 template not loaded |
-| GET | /api/outbounds | 200 `[tag string]` | 503 template not loaded |
+| GET | /api/inbounds | 200 `[{tag, protocol, network, security}]` | 503 template not loaded |
+| GET | /api/outbounds | 200 `[{tag, protocol}]` | 503 template not loaded |
 | GET | /api/status | 200 `{template_loaded, xray_running, xray_pid, user_count}` | — |
 | POST | /api/config | 200 `{"message": "config updated"}` | 422 invalid JSON body |
 
 - `/api/inbounds` and `/api/outbounds` call `xray_service.load_template()`
-  and then `config_service.inbound_summaries()` / `outbound_tags()`. They
-  return 503 when the template is missing (an empty list would conflate
-  "zero inbounds exist" with "no template loaded").
+  and then `config_service.inbound_summaries()` / `outbound_summaries()`.
+  The inbound response includes `network` and `security` (from
+  `streamSettings`, empty string when absent) so the frontend can label
+  checkboxes, e.g. "REALITY (tcp + reality)". They return 503 when the
+  template is missing (an empty list would conflate "zero inbounds exist"
+  with "no template loaded").
 - `/api/status` bundles `load_template()`, `xray_service.status()`, and
   `db.list_users()` into one composite response so the frontend can render
   a status bar with one HTTP call.
@@ -213,9 +216,13 @@ This is what makes the milestone testable without a running server.
   only**. Disabled users vanish from the config on the next sync.
 - `uuids_map(users)` — merges all active users' uuid maps into one flat
   `{email: uuid}` dict, the shape the allocator wants.
-- `inbound_summaries(template)` / `outbound_tags(template)` — extract just
-  `{tag, protocol}` per inbound and the tag strings of the outbounds, so
-  the allocator never sees the full template structure.
+- `inbound_summaries(template)` — extracts `{tag, protocol, network, security}`
+  per inbound. `network` and `security` come from `streamSettings` (empty
+  string when absent) so the frontend can label checkboxes.
+- `outbound_tags(template)` — returns the tag strings of the outbounds for
+  the allocator (which only needs tags).
+- `outbound_summaries(template)` — returns `[{tag, protocol}]` for the
+  frontend via `/api/outbounds`.
 - `clients_and_rules(users, template)` — calls the allocator, then appends
   the trailing catch-all rule `{"outboundTag": "BLOCK"}` that drops any
   traffic whose email matched no rule. The catch-all lives here (not in
