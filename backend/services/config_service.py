@@ -103,6 +103,12 @@ def build_config(template, users):
     Why a deep copy: the caller's template dict must stay untouched — it is
     re-read from disk on every sync, and mutating it would leak filled
     state into the opaque parts we promise to preserve.
+
+    Why routing is optional: novice operators may omit the routing section
+    entirely; the panel creates it automatically. When the user does supply
+    their own routing.rules, the generated rules are appended after them so
+    user-authored rules stay at the front and the BLOCK catch-all still
+    trails at the end.
     """
     config = copy.deepcopy(template)
     clients, rules, warnings = clients_and_rules(users, template)
@@ -110,5 +116,6 @@ def build_config(template, users):
         if inbound["protocol"] != "vless":
             continue
         inbound["settings"]["clients"] = clients.get(inbound["tag"], [])
-    config["routing"]["rules"] = rules
+    routing = config.setdefault("routing", {})
+    routing["rules"] = routing.get("rules", []) + rules
     return config, warnings

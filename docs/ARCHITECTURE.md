@@ -232,7 +232,9 @@ This is what makes the milestone testable without a running server.
 - `build_config(template, users)` — the entry point: `copy.deepcopy`s the
   template, replaces `settings.clients` of every VLESS inbound (an empty
   list when nobody is allocated to it; non-VLESS inbounds untouched) and
-  replaces `routing.rules`. Returns `(config, warnings)`.
+  appends generated rules to `routing.rules` (auto-creating the `routing`
+  section when absent, extending instead of replacing so pre-existing user
+  rules survive). Returns `(config, warnings)`.
 
 Everything else in the template is preserved exactly — the opaque-template
 rule. The copy also guarantees the caller's template dict survives

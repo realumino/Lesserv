@@ -64,6 +64,7 @@ class TestBuildConfig(unittest.TestCase):
         self.assertEqual(
             config["routing"]["rules"],
             [
+                {},
                 {"user": ["regexp:.*@OUTBOUND$"], "outboundTag": "OUTBOUND"},
                 {"user": ["regexp:.*@BLOCK$"], "outboundTag": "BLOCK"},
                 {"outboundTag": "BLOCK"},
@@ -117,7 +118,41 @@ class TestBuildConfig(unittest.TestCase):
         config, warnings = config_service.build_config(template, [])
 
         self.assertIn("no BLOCK outbound; skipping catch-all rule", warnings)
-        self.assertEqual(len(config["routing"]["rules"]), 1)
+        self.assertEqual(len(config["routing"]["rules"]), 2)
+
+    def test_missing_routing_is_auto_created(self):
+        template = _template()
+        del template["routing"]
+        users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
+
+        config, warnings = config_service.build_config(template, users)
+
+        self.assertIn("routing", config)
+        self.assertGreater(len(config["routing"]["rules"]), 0)
+
+    def test_user_rules_are_preserved_and_extended(self):
+        template = _template()
+        user_rule = {
+            "user": ["regexp:.*@CUSTOM$"],
+            "outboundTag": "OUTBOUND",
+        }
+        template["routing"]["rules"] = [user_rule]
+        users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
+
+        config, _ = config_service.build_config(template, users)
+
+        self.assertEqual(config["routing"]["rules"][0], user_rule)
+        self.assertGreater(len(config["routing"]["rules"]), 1)
+
+    def test_routing_other_keys_preserved(self):
+        template = _template()
+        template["routing"]["domainStrategy"] = "IPOnDemand"
+        users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
+
+        config, _ = config_service.build_config(template, users)
+
+        self.assertEqual(config["routing"]["domainStrategy"], "IPOnDemand")
+        self.assertIn("rules", config["routing"])
 
 
 if __name__ == "__main__":
