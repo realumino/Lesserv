@@ -40,21 +40,21 @@ export default function UserForm({ target, inbounds, outbounds, onClose, onSaved
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-10"
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-10"
       onClick={onClose}
     >
       <form
         onSubmit={submit}
         onClick={(e) => e.stopPropagation()}
-        className="bg-gray-800 rounded-lg p-6 w-full max-w-lg space-y-4 shadow-xl"
+        className="bg-apple-card rounded-2xl p-6 w-full max-w-lg space-y-5 shadow-xl border border-apple-border"
       >
-        <h2 className="text-lg font-bold">{isEdit ? `Edit ${target.username}` : 'Add User'}</h2>
+        <h2 className="text-lg font-bold text-apple-text">{isEdit ? `Edit ${target.username}` : 'Add User'}</h2>
         {error && (
-          <p className="bg-red-900/50 border border-red-700 rounded px-3 py-2 text-sm">{error}</p>
+          <p className="bg-[#ffecea] border border-[#ff453a]/20 text-apple-red rounded-xl px-4 py-2 text-sm">{error}</p>
         )}
         <Field label="Username">
           {isEdit ? (
-            <p className="font-mono text-gray-300 py-1.5">{target.username}</p>
+            <p className="font-mono text-apple-text py-1.5">{target.username}</p>
           ) : (
             <input
               className={inputCls}
@@ -75,11 +75,12 @@ export default function UserForm({ target, inbounds, outbounds, onClose, onSaved
           </select>
         </Field>
         <Field label="Expiry">
-          <label className="flex items-center gap-2 text-sm text-gray-300 mb-1">
+          <label className="flex items-center gap-2 text-sm text-apple-text mb-1">
             <input
               type="checkbox"
               checked={form.hasExpire}
               onChange={(e) => set('hasExpire', e.target.checked)}
+              className="accent-apple-blue w-4 h-4"
             />
             User expires at a date
           </label>
@@ -112,18 +113,18 @@ export default function UserForm({ target, inbounds, outbounds, onClose, onSaved
             onChange={(e) => set('note', e.target.value)}
           />
         </Field>
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-3 pt-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600"
+            className="px-5 py-2 rounded-full text-sm font-medium bg-apple-gray-surface text-apple-text hover:bg-apple-border transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="px-4 py-1.5 rounded text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 font-medium"
+            className="px-5 py-2 rounded-full text-sm bg-apple-blue hover:bg-apple-blue-hover disabled:opacity-50 text-white font-medium transition-colors shadow-sm"
           >
             {busy ? 'Saving…' : isEdit ? 'Save Changes' : 'Create User'}
           </button>
@@ -134,13 +135,13 @@ export default function UserForm({ target, inbounds, outbounds, onClose, onSaved
 }
 
 const inputCls =
-  'w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500'
+  'w-full bg-apple-card border border-apple-border rounded-xl px-3 py-2 text-sm text-apple-text placeholder-apple-gray focus:outline-none focus:border-apple-blue focus:ring-2 focus:ring-apple-blue/10 transition-all'
 
 /** Labeled field wrapper for consistent spacing. */
 function Field({ label, children }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
+      <label className="block text-xs font-semibold text-apple-muted uppercase tracking-wide mb-1.5">{label}</label>
       {children}
     </div>
   )
@@ -151,22 +152,23 @@ function CheckboxGrid({ label, options, checked, onToggle }) {
   return (
     <Field label={label}>
       {options.length === 0 ? (
-        <p className="text-xs text-gray-500">None available (template not loaded?)</p>
+        <p className="text-xs text-apple-muted">None available (template not loaded?)</p>
       ) : (
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           {options.map((opt) => (
             <label
               key={opt.tag}
-              className="flex items-center gap-2 text-sm bg-gray-900 border border-gray-700 rounded px-2.5 py-1.5 cursor-pointer hover:border-gray-500"
+              className="flex items-center gap-2 text-sm bg-apple-card border border-apple-border rounded-xl px-3 py-2 cursor-pointer hover:border-apple-blue/40 transition-colors"
             >
               <input
                 type="checkbox"
                 checked={checked.includes(opt.tag)}
                 onChange={() => onToggle(opt.tag)}
+                className="accent-apple-blue w-4 h-4"
               />
-              <span className="font-mono">{opt.tag}</span>
+              <span className="font-mono text-apple-text">{opt.tag}</span>
               {opt.network && (
-                <span className="text-xs text-gray-500 ml-auto">
+                <span className="text-xs text-apple-muted ml-auto">
                   {opt.network}
                   {opt.security ? ` + ${opt.security}` : ''}
                 </span>

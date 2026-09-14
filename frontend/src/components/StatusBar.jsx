@@ -6,14 +6,14 @@
  */
 export default function StatusBar({ status }) {
   return (
-    <header className="flex flex-wrap items-center gap-4 bg-gray-800 rounded-lg px-4 py-2.5 text-sm">
-      <h1 className="text-lg font-bold tracking-wide">Lesserv</h1>
+    <header className="flex flex-wrap items-center gap-4 bg-apple-card rounded-2xl px-5 py-3 text-sm shadow-sm border border-apple-border">
+      <h1 className="text-lg font-bold tracking-tight text-apple-text">Lesserv</h1>
       <Badge ok={status?.template_loaded} label="Template" />
       <Badge ok={status?.xray_running} label="Xray" />
       {status?.xray_pid != null && (
-        <span className="text-gray-400">PID {status.xray_pid}</span>
+        <span className="text-apple-muted">PID {status.xray_pid}</span>
       )}
-      <span className="text-gray-400 ml-auto">
+      <span className="text-apple-muted ml-auto">
         Users: {status?.user_count ?? '—'}
       </span>
     </header>
@@ -23,11 +23,13 @@ export default function StatusBar({ status }) {
 /** Colored dot + label: green when ok, red when known-bad, gray when unknown. */
 function Badge({ ok, label }) {
   const color =
-    ok == null ? 'text-gray-500' : ok ? 'text-green-400' : 'text-red-400'
+    ok == null ? 'text-apple-muted' : ok ? 'text-apple-green' : 'text-apple-red'
+  const dot =
+    ok == null ? 'bg-apple-gray' : ok ? 'bg-apple-green' : 'bg-apple-red'
   return (
     <span className={`flex items-center gap-1.5 ${color}`}>
-      <span>{ok ? '●' : '○'}</span>
-      <span className="text-gray-300">{label}</span>
+      <span className={`w-2 h-2 rounded-full ${dot}`} />
+      <span className="text-apple-muted">{label}</span>
     </span>
   )
 }

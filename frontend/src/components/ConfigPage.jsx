@@ -47,16 +47,16 @@ export default function ConfigPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex justify-end">
         <button
           onClick={load}
-          className="text-xs text-blue-400 hover:text-blue-300"
+          className="text-sm text-apple-blue hover:text-apple-blue-hover font-medium transition-colors"
         >
           Refresh
         </button>
       </div>
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-5">
         <JsonPanel
           title="Template"
           subtitle="the file you provide"
@@ -70,27 +70,27 @@ export default function ConfigPage() {
           empty="Not generated yet — no template loaded or last sync failed."
         />
       </div>
-      <section>
-        <h2 className="text-sm font-medium text-gray-400 mb-2">
+      <section className="bg-apple-card rounded-2xl p-5 shadow-sm border border-apple-border">
+        <h2 className="text-sm font-semibold text-apple-muted uppercase tracking-wide mb-3">
           Replace template (paste full JSON)
         </h2>
         <textarea
-          className="w-full h-48 bg-gray-950 border border-gray-800 rounded p-3 text-xs font-mono focus:outline-none focus:border-blue-500"
+          className="w-full h-48 bg-apple-bg border border-apple-border rounded-xl p-3 text-xs font-mono text-apple-text placeholder-apple-gray focus:outline-none focus:border-apple-blue focus:ring-2 focus:ring-apple-blue/10 transition-all resize-none"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder='{"inbounds": [...], "outbounds": [...], ...}'
           spellCheck={false}
         />
-        <div className="flex items-center gap-3 mt-2">
+        <div className="flex items-center gap-3 mt-4">
           <button
             onClick={save}
             disabled={busy || !text.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-1.5 rounded text-sm font-medium"
+            className="bg-apple-blue hover:bg-apple-blue-hover disabled:opacity-50 text-white px-5 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
           >
             {busy ? 'Saving…' : 'Save & Resync'}
           </button>
           {msg && (
-            <p className={`text-sm ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>
+            <p className={`text-sm ${msg.ok ? 'text-apple-green' : 'text-apple-red'}`}>
               {msg.text}
             </p>
           )}
@@ -103,19 +103,19 @@ export default function ConfigPage() {
 /** One read-only JSON pane: loading, empty, or pretty-printed content. */
 function JsonPanel({ title, subtitle, value, empty }) {
   return (
-    <section>
-      <h2 className="text-sm font-medium text-gray-400 mb-2">
+    <section className="bg-apple-card rounded-2xl p-5 shadow-sm border border-apple-border">
+      <h2 className="text-sm font-semibold text-apple-muted uppercase tracking-wide mb-3">
         {title}
         {subtitle && (
-          <span className="text-xs text-gray-600 font-normal ml-2">{subtitle}</span>
+          <span className="text-xs text-apple-muted/70 font-normal ml-2 normal-case">{subtitle}</span>
         )}
       </h2>
       {value === undefined ? (
-        <p className="text-gray-400 text-sm">Loading…</p>
+        <p className="text-apple-muted text-sm">Loading…</p>
       ) : value === null ? (
-        <p className="text-gray-500 text-sm">{empty}</p>
+        <p className="text-apple-muted text-sm">{empty}</p>
       ) : (
-        <pre className="bg-gray-950 border border-gray-800 rounded p-3 text-xs overflow-auto max-h-72">
+        <pre className="bg-apple-bg border border-apple-border rounded-xl p-3 text-xs overflow-auto max-h-72 text-apple-text">
           {JSON.stringify(value, null, 2)}
         </pre>
       )}
