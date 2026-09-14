@@ -6,3 +6,5 @@ data/
 *.err.log
 .vscode/
 config/
+node_modules/
+frontend/dist/

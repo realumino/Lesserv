@@ -63,6 +63,20 @@ def get_status(conn=Depends(get_db)):
     }
 
 
+@router.get("/config")
+def get_config():
+    """Return the current Xray template JSON.
+
+    Why: the frontend Config page shows the template before replacing it.
+    404 (not 503) because "no file yet" is the expected state on a fresh
+    install — the page renders an empty state, not an error.
+    """
+    template = xray_service.load_template()
+    if template is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    return template
+
+
 @router.post("/config")
 def post_config(payload: dict = Body(...), conn=Depends(get_db)):
     """Replace the Xray template with the posted JSON body and resync Xray.

@@ -170,6 +170,24 @@ class TestSystemRouter(unittest.TestCase):
              "xray_pid": 42, "user_count": 2},
         )
 
+    @mock.patch("backend.routers.system.xray_service.load_template")
+    def test_get_config_returns_template(self, mock_load):
+        template = _fixture_template()
+        mock_load.return_value = template
+
+        from backend.routers.system import get_config
+        self.assertEqual(get_config(), template)
+
+    @mock.patch("backend.routers.system.xray_service.load_template")
+    def test_get_config_404_when_no_template(self, mock_load):
+        mock_load.return_value = None
+
+        from backend.routers.system import get_config
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            get_config()
+        self.assertEqual(ctx.exception.status_code, 404)
+
     @mock.patch("backend.routers.system.xray_service.sync")
     @mock.patch("backend.routers.system.xray_service.save_template")
     def test_post_config_writes_and_syncs(self, mock_save, mock_sync):

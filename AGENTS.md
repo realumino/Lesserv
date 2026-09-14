@@ -16,7 +16,9 @@ wrong documentation is worse than none.
 ## Run it
 
 - conda env: `lesserv` (Python 3.14). Deps: `python -m pip install -r requirements.txt`
-- Start: `uvicorn backend.main:app --reload` from repo root -> http://127.0.0.1:8000/docs
+- Start backend: `uvicorn backend.main:app --reload` from repo root -> http://127.0.0.1:8000/docs
+- Start frontend: `cd frontend && npm install && npm run dev` -> http://localhost:5173
+  (Vite proxies /api/* to the backend; no CORS setup needed)
 - DB file: `data/panel.db` (gitignored, auto-created)
 
 ## Architecture decisions (locked)

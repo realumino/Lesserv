@@ -22,16 +22,17 @@ differently from other panels:
   same server — per-user exit selection, without writing a routing rule per
   user.
 
-**Current state (after milestone 3):** the panel stores users in SQLite,
+**Current state (after milestone 4):** the panel stores users in SQLite,
 serves a REST API for user CRUD, after every user change regenerates the
-Xray config and restarts Xray, and exposes endpoints for the template
+Xray config and restarts Xray, exposes endpoints for the template
 structure (inbounds/outbounds tags), system health, and template
-replacement via the API.
+read/replace — and ships a React SPA (Vite, plain JS) that consumes all
+of it: status bar, user table, add/edit modal, config tab.
 
 ## The layers
 
 ```
-Browser / curl / React (milestone 4)
+Browser (React SPA, dev: Vite on :5173 proxying /api -> :8000)
    │  HTTP
    ▼
 uvicorn                server: opens the port, speaks HTTP
@@ -90,10 +91,13 @@ And the pure pieces:
 
 ```
 conda activate lesserv
-uvicorn backend.main:app --reload     # server, from repo root
+uvicorn backend.main:app --reload     # backend, from repo root
+cd frontend && npm install && npm run dev   # frontend, :5173
 python -m unittest tests.test_users -v    # tests
 ```
 
+- Web UI: http://localhost:5173 (Vite proxies /api/* to the backend,
+  so no CORS setup is needed)
 - Interactive API docs: http://127.0.0.1:8000/docs
 - DB file: `data/panel.db` (gitignored, auto-created on first start)
 
@@ -155,15 +159,16 @@ Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
 
 ### backend/routers/system.py — system info and config management
 
-Four endpoints that the React frontend (milestone 4) will use to populate
-inbound/outbound checkbox lists and show the status bar. All share
-`prefix="/api"` and `tags=["system"]`.
+Five endpoints that the React frontend uses to populate
+inbound/outbound checkbox lists, show the status bar, and view/replace
+the template. All share `prefix="/api"` and `tags=["system"]`.
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | GET | /api/inbounds | 200 `[{tag, protocol, network, security}]` | 503 template not loaded |
 | GET | /api/outbounds | 200 `[{tag, protocol}]` | 503 template not loaded |
 | GET | /api/status | 200 `{template_loaded, xray_running, xray_pid, user_count}` | — |
+| GET | /api/config | 200 template JSON | 404 no template yet |
 | POST | /api/config | 200 `{"message": "config updated"}` | 422 invalid JSON body |
 
 - `/api/inbounds` and `/api/outbounds` call `xray_service.load_template()`
@@ -176,6 +181,10 @@ inbound/outbound checkbox lists and show the status bar. All share
 - `/api/status` bundles `load_template()`, `xray_service.status()`, and
   `db.list_users()` into one composite response so the frontend can render
   a status bar with one HTTP call.
+- `GET /api/config` returns the current template for the Config tab. It
+  answers 404 (not 503 like the tag endpoints) because "no file yet" is
+  the expected state on a fresh install — the page renders an empty
+  state, not an error.
 - `POST /api/config` accepts a raw JSON body (the template is opaque — the
   panel never validates its structure), writes it atomically via
   `xray_service.save_template()`, and calls `xray_service.sync()` to
@@ -334,6 +343,38 @@ API.
   text columns back into real lists/dicts. All JSON encoding/decoding
   lives inside db.py; other layers see plain Python values.
 
+### frontend/ — the React SPA (milestone 4)
+
+Plain-JS React 18 built by Vite; Tailwind comes from a CDN script tag in
+`index.html` (no build config, no extra npm dep). The frontend never talks
+to the backend by absolute URL: `vite.config.js` proxies `/api/*` to
+`http://127.0.0.1:8000`, so dev needs no CORS setup. Production serving
+(FastAPI `StaticFiles` mount of `frontend/dist`) is deliberately deferred.
+
+- `src/api.js` — the only file that calls `fetch()`. Every function
+  returns `{ data, error }` so components never handle HTTP details; a
+  non-2xx response becomes `error = body.detail || "HTTP <status>"`.
+- `src/App.jsx` — owns all shared state: users, status, the inbound /
+  outbound tag lists (fetched once on mount — they only change when the
+  template changes), the active tab, and which form is open. A single
+  `refresh()` re-fetches users + status after every mutation. State lives
+  here (not in the children) so one refresh re-renders everything.
+- `src/components/StatusBar.jsx` — dumb header: template/Xray badges, PID,
+  user count, from the `/api/status` object App hands it.
+- `src/components/UserTable.jsx` — dumb table with loading / error /
+  empty states; delete goes through `window.confirm` then App's callback.
+- `src/components/UserForm.jsx` — the one non-trivial component: a modal
+  shared by create (POST) and edit (PUT). `target === null` means create,
+  an object means edit (username becomes read-only — it is the identity).
+  Expiry is a checkbox + `datetime-local` input converted to/from unix
+  timestamps by two helpers. Inbound/outbound checkboxes are built from
+  the tag lists with `network`/`security` shown as hints. Client-side
+  validation is UX-only; the backend re-validates everything.
+- `src/components/ConfigPage.jsx` — shows `GET /api/config` in a
+  read-only block, accepts pasted JSON in a textarea, validates with
+  `JSON.parse` client-side, and POSTs it. The template stays opaque here
+  too: the page checks syntax, never structure.
+
 ### tests/ — locking behavior down
 
 All tests use stdlib `unittest` (no extra deps).
@@ -353,9 +394,10 @@ All tests use stdlib `unittest` (no extra deps).
   verbatim, and the caller's template dict never mutated.
 - `tests/test_system.py` — tests the two new `xray_service` functions
   (`save_template` atomic write and directory creation; `status` for
-  running/exited/none states), plus the four router endpoints called
+  running/exited/none states), plus the five router endpoints called
   directly with mocked dependencies (503 on missing template, correct
-  summaries/tags, composite status response, config write-and-sync flow).
+  summaries/tags, composite status response, config read 200/404, config
+  write-and-sync flow).
 
 ## Life of one request: POST /api/users
 
