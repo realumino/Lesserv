@@ -77,6 +77,21 @@ def get_config():
     return template
 
 
+@router.get("/config/generated")
+def get_generated_config():
+    """Return the generated config Xray reads, plus when it was written.
+
+    Why the envelope: the Config tab shows template and generated config
+    side by side; the timestamp reveals a file that predates the last
+    change (a skipped or failed sync). 404 because before the first
+    successful sync the file simply does not exist.
+    """
+    config = xray_service.load_config()
+    if config is None:
+        raise HTTPException(status_code=404, detail="generated config not found")
+    return {"config": config, "generated_at": xray_service.config_mtime()}
+
+
 @router.post("/config")
 def post_config(payload: dict = Body(...), conn=Depends(get_db)):
     """Replace the Xray template with the posted JSON body and resync Xray.

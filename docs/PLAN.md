@@ -23,6 +23,6 @@ Nothing else is ever generated, validated, or interpreted.
 | 1 | Full user CRUD + pydantic models (backend/models.py, backend/routers/users.py, ensure_uuids) | done |
 | 2 | Fill template's `routing.rules` + VLESS `clients` from DB users; run/restart Xray subprocess | done |
 | 3 | Endpoints: GET /api/inbounds, /api/outbounds (tags read from template), GET /api/status, POST /api/config (replace template) | done |
-| 4 | React frontend (Vite, plain JS, Tailwind CDN): status bar, user table, add/edit modal with inbound/outbound checkboxes, config tab; + GET /api/config | done |
+| 4 | React frontend (Vite, plain JS, Tailwind CDN): status bar, user table, add/edit modal with inbound/outbound checkboxes, config tab showing template + generated config; + GET /api/config, GET /api/config/generated | done |
 | 5 | Share links (vless:// URIs) — optional stretch | NEXT |
 | later | Xray gRPC stats API, auth, expiry/quota jobs, Docker | deferred |

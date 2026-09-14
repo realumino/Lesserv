@@ -29,6 +29,24 @@ _process = None
 _lock = threading.Lock()
 
 
+def _read_json(path, label):
+    """Read a JSON file; return None when it is missing or invalid.
+
+    Why shared: the template and the generated config need the exact same
+    tolerant read — a missing or malformed file is a state to report with
+    a warning, not an exception to raise.
+    """
+    if not os.path.exists(path):
+        logger.warning("%s not found at %s", label, path)
+        return None
+    with open(path, encoding="utf-8") as handle:
+        try:
+            return json.load(handle)
+        except json.JSONDecodeError:
+            logger.warning("%s at %s is not valid JSON", label, path)
+            return None
+
+
 def load_template():
     """Read the user-provided template; return None when missing or invalid.
 
@@ -36,16 +54,16 @@ def load_template():
     state — the panel must keep serving users while waiting for the admin
     to drop the file in (or POST one in milestone 3).
     """
-    path = settings.TEMPLATE_PATH
-    if not os.path.exists(path):
-        logger.warning("template not found at %s; skipping sync", path)
-        return None
-    with open(path, encoding="utf-8") as handle:
-        try:
-            return json.load(handle)
-        except json.JSONDecodeError:
-            logger.warning("template at %s is not valid JSON; skipping sync", path)
-            return None
+    return _read_json(settings.TEMPLATE_PATH, "template")
+
+
+def load_config():
+    """Read the generated config Xray was last started with; None if absent.
+
+    Why this exists: the Config tab shows it next to the template, so a
+    skipped or failed sync is visible by comparing the two files.
+    """
+    return _read_json(settings.XRAY_CONFIG_PATH, "generated config")
 
 
 def save_template(content):
@@ -76,6 +94,19 @@ def write_config(config):
     with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(config, handle, indent=2)
     os.replace(tmp_path, path)
+
+
+def config_mtime():
+    """Return the generated config's last-write time as a unix timestamp.
+
+    Why here and not in the router: routers do HTTP only; this module is
+    the one place that touches the filesystem. None when no file exists,
+    so the caller can tell "never generated" apart from a real timestamp.
+    """
+    path = settings.XRAY_CONFIG_PATH
+    if not os.path.exists(path):
+        return None
+    return int(os.path.getmtime(path))
 
 
 def _binary_available():

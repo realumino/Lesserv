@@ -69,6 +69,41 @@ class TestSaveTemplate(unittest.TestCase):
         self.assertTrue(os.path.exists(deeper))
 
 
+class TestLoadConfig(unittest.TestCase):
+    """Read the generated config back, tolerating missing/corrupt files."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmpdir, "xray_config.json")
+        self.patcher = mock.patch(
+            "backend.services.xray_service.settings.XRAY_CONFIG_PATH", self.path
+        )
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+
+    def test_load_config_returns_dict_after_write(self):
+        content = {"inbounds": [], "outbounds": [], "routing": {}}
+        xray_service.write_config(content)
+        self.assertEqual(xray_service.load_config(), content)
+
+    def test_load_config_none_when_missing(self):
+        self.assertIsNone(xray_service.load_config())
+
+    def test_load_config_none_when_malformed(self):
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        self.assertIsNone(xray_service.load_config())
+
+    def test_config_mtime_none_when_missing(self):
+        self.assertIsNone(xray_service.config_mtime())
+
+    def test_config_mtime_returns_timestamp_after_write(self):
+        xray_service.write_config({"a": 1})
+        self.assertIsInstance(xray_service.config_mtime(), int)
+
+
 class TestStatus(unittest.TestCase):
     """Expose Xray subprocess health without side effects."""
 
@@ -186,6 +221,30 @@ class TestSystemRouter(unittest.TestCase):
         from fastapi import HTTPException
         with self.assertRaises(HTTPException) as ctx:
             get_config()
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    @mock.patch("backend.routers.system.xray_service.config_mtime")
+    @mock.patch("backend.routers.system.xray_service.load_config")
+    def test_generated_config_returns_envelope(self, mock_load, mock_mtime):
+        mock_load.return_value = {"inbounds": [], "outbounds": []}
+        mock_mtime.return_value = 1789000000
+
+        from backend.routers.system import get_generated_config
+        result = get_generated_config()
+
+        self.assertEqual(
+            result,
+            {"config": {"inbounds": [], "outbounds": []}, "generated_at": 1789000000},
+        )
+
+    @mock.patch("backend.routers.system.xray_service.load_config")
+    def test_generated_config_404_when_missing(self, mock_load):
+        mock_load.return_value = None
+
+        from backend.routers.system import get_generated_config
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            get_generated_config()
         self.assertEqual(ctx.exception.status_code, 404)
 
     @mock.patch("backend.routers.system.xray_service.sync")

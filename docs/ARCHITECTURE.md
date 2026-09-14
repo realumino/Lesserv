@@ -159,7 +159,7 @@ Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
 
 ### backend/routers/system.py — system info and config management
 
-Five endpoints that the React frontend uses to populate
+Six endpoints that the React frontend uses to populate
 inbound/outbound checkbox lists, show the status bar, and view/replace
 the template. All share `prefix="/api"` and `tags=["system"]`.
 
@@ -169,6 +169,7 @@ the template. All share `prefix="/api"` and `tags=["system"]`.
 | GET | /api/outbounds | 200 `[{tag, protocol}]` | 503 template not loaded |
 | GET | /api/status | 200 `{template_loaded, xray_running, xray_pid, user_count}` | — |
 | GET | /api/config | 200 template JSON | 404 no template yet |
+| GET | /api/config/generated | 200 `{config, generated_at}` | 404 not generated yet |
 | POST | /api/config | 200 `{"message": "config updated"}` | 422 invalid JSON body |
 
 - `/api/inbounds` and `/api/outbounds` call `xray_service.load_template()`
@@ -185,6 +186,11 @@ the template. All share `prefix="/api"` and `tags=["system"]`.
   answers 404 (not 503 like the tag endpoints) because "no file yet" is
   the expected state on a fresh install — the page renders an empty
   state, not an error.
+- `GET /api/config/generated` returns the config Xray was last started
+  with as `{config, generated_at}` (the file's mtime). Same 404 logic:
+  before the first successful sync the file does not exist. The
+  timestamp lets the UI show whether the generated config predates the
+  user's last change — template and output side by side.
 - `POST /api/config` accepts a raw JSON body (the template is opaque — the
   panel never validates its structure), writes it atomically via
   `xray_service.save_template()`, and calls `xray_service.sync()` to
@@ -259,8 +265,11 @@ in it ever raises: a missing template or binary is a normal state, so each
 step logs a warning and gives up — a user edit must never take the API
 down.
 
-- `load_template()` — reads `settings.TEMPLATE_PATH`; `None` when the file
-  is missing or not valid JSON (both logged as warnings).
+- `load_template()` / `load_config()` — tolerant JSON readers for
+  `settings.TEMPLATE_PATH` and `settings.XRAY_CONFIG_PATH` (the generated
+  config); both return `None` when the file is missing or invalid, with a
+  warning logged. They share the private `_read_json(path, label)` helper
+  — a missing file is a state to report, not an exception to raise.
 - `save_template(content)` — the write counterpart of `load_template()`.
   Writes `content` (a dict) to `settings.TEMPLATE_PATH` atomically (temp
   file + `os.replace`). Called by `POST /api/config`; the content is always
@@ -269,6 +278,9 @@ down.
 - `write_config(config)` — writes to `settings.XRAY_CONFIG_PATH`
   atomically: dump to a `.tmp` file, then `os.replace`, so Xray can never
   read a half-written config.
+- `config_mtime()` — the generated config's last-write unix timestamp
+  (`None` when absent). Lives here, not in the router, because only this
+  module touches the filesystem; the Config tab displays it.
 - `start()` — launches `[binary, "run", "-config", path]` via
   `subprocess.Popen` with inherited stdout/stderr (Xray's own log is the
   operator's window). Skips with a warning when the binary does not exist
@@ -370,10 +382,14 @@ to the backend by absolute URL: `vite.config.js` proxies `/api/*` to
   timestamps by two helpers. Inbound/outbound checkboxes are built from
   the tag lists with `network`/`security` shown as hints. Client-side
   validation is UX-only; the backend re-validates everything.
-- `src/components/ConfigPage.jsx` — shows `GET /api/config` in a
-  read-only block, accepts pasted JSON in a textarea, validates with
-  `JSON.parse` client-side, and POSTs it. The template stays opaque here
-  too: the page checks syntax, never structure.
+- `src/components/ConfigPage.jsx` — two read-only JSON panes side by
+  side: the template (`GET /api/config`) and the generated config
+  (`GET /api/config/generated`, its `generated_at` shown under the
+  title), so a skipped or failed sync is visible by comparing the two.
+  Below them, a textarea accepts pasted JSON, validates with `JSON.parse`
+  client-side, and POSTs it; a Refresh button and the post-save path both
+  re-fetch the panes instead of trusting local state. The template stays
+  opaque here too: the page checks syntax, never structure.
 
 ### tests/ — locking behavior down
 
@@ -392,12 +408,13 @@ All tests use stdlib `unittest` (no extra deps).
   fill: clients injected, rules + BLOCK catch-all replaced, disabled users
   excluded, unused VLESS inbounds emptied, everything else preserved
   verbatim, and the caller's template dict never mutated.
-- `tests/test_system.py` — tests the two new `xray_service` functions
+- `tests/test_system.py` — tests the newer `xray_service` functions
   (`save_template` atomic write and directory creation; `status` for
-  running/exited/none states), plus the five router endpoints called
-  directly with mocked dependencies (503 on missing template, correct
-  summaries/tags, composite status response, config read 200/404, config
-  write-and-sync flow).
+  running/exited/none states; `load_config` and `config_mtime` for
+  missing/valid files), plus the six router endpoints called directly
+  with mocked dependencies (503 on missing template, correct
+  summaries/tags, composite status response, template read 200/404,
+  generated-config envelope 200/404, config write-and-sync flow).
 
 ## Life of one request: POST /api/users
 
