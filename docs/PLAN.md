@@ -20,9 +20,8 @@ result the panel writes is called the "runtime config".
 
 Milestones 0–5 are done; there is no active milestone now. Work happens as
 small, self-contained improvements with no shared purpose — naming, UI
-polish, cleanups. Latest: renamed the user-provided "template" to "config"
-and the generated file to "runtime config" across files, env vars, API
-routes, and UI.
+polish, cleanups. Latest: share-link generation now reads `flow` from
+an inbound's `settings.flow` and appends it as a `flow=` query param.
 
 | # | What | Status |
 |---|------|--------|

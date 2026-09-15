@@ -323,6 +323,9 @@ No files, no SQLite, no subprocess.
   the transport (type, path, host, mode, serviceName) and security
   (tls/reality sni, fp, pbk, sid, spx) query parameters from the
   inbound's `streamSettings`.
+- `_flow_params(inbound)` — adds the `flow` query parameter when the
+  inbound sets `settings.flow`. Xray declares flow per inbound, so the
+  link echoes it verbatim with no per-case validation.
 - `links_for_user(user, config, configured_address)` — produces one
   `{inbound, outbound, email, uri}` entry per allowed
   `(inbound, outbound)` pair. Skips non-VLESS inbounds, unknown tags,

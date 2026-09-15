@@ -22,6 +22,7 @@ class TestShareService(unittest.TestCase):
                     "protocol": "vless",
                     "listen": "0.0.0.0",
                     "port": 443,
+                    "settings": {"flow": "xtls-rprx-vision"},
                     "streamSettings": {
                         "network": "raw",
                         "security": "reality",
@@ -97,6 +98,7 @@ class TestShareService(unittest.TestCase):
         self.assertIn("sid=1234", reality["uri"])
         self.assertIn("fp=chrome", reality["uri"])
         self.assertIn("encryption=none", reality["uri"])
+        self.assertIn("flow=xtls-rprx-vision", reality["uri"])
         self.assertEqual(warnings, [])
 
     def test_xhttp_link(self):
@@ -111,6 +113,7 @@ class TestShareService(unittest.TestCase):
         self.assertIn("path=%2Fxhttp-path", links[0]["uri"])
         self.assertIn("host=xhttp.example.com", links[0]["uri"])
         self.assertIn("mode=auto", links[0]["uri"])
+        self.assertNotIn("flow=", links[0]["uri"])
         self.assertEqual(warnings, [])
 
     def test_non_vless_inbound_is_skipped(self):

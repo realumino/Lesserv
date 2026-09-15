@@ -165,6 +165,18 @@ def _security_params(inbound):
     return params, warnings
 
 
+def _flow_params(inbound):
+    """Return the VLESS `flow` query param when the inbound sets one.
+
+    Why flow comes from the inbound: Xray lets the operator declare flow
+    once per inbound (`settings.flow`) instead of per client, so there is
+    nothing user-specific to store. The panel echoes whatever the
+    operator wrote without judging whether it fits the transport.
+    """
+    flow = (inbound.get("settings") or {}).get("flow")
+    return {"flow": flow} if flow else {}
+
+
 def _build_uri(email, uuid, address, port, params, inbound_tag):
     """Assemble a vless:// URI from its parts.
 
@@ -234,6 +246,7 @@ def links_for_user(user, config, configured_address):
             params = {"encryption": "none"}
             params.update(transport)
             params.update(security)
+            params.update(_flow_params(inbound))
 
             uri = _build_uri(email, uuid, address, port, params, inbound_tag)
             links.append({
