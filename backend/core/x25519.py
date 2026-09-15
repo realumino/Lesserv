@@ -1,7 +1,7 @@
 """Pure-Python X25519 public-key derivation from a raw private scalar.
 
 Why this exists: REALITY share links need the server's public key (`pbk`),
-but the template only stores the private key. The project avoids adding the
+but the config only stores the private key. The project avoids adding the
 `cryptography` dependency, so this module implements the RFC 7748 Montgomery
 ladder directly.
 
@@ -107,7 +107,7 @@ def public_key_from_raw(raw: bytes) -> str:
 def derive_public_key(private_key: str) -> str | None:
     """Derive the base64url X25519 public key from a private key string.
 
-    Why return None on bad input: a malformed template key is not fatal; the
+    Why return None on bad input: a malformed config key is not fatal; the
     caller can warn and omit the `pbk` parameter instead of crashing the link
     builder.
 

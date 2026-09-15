@@ -36,7 +36,7 @@ export const fetchStatus = () => request('/status')
 export const fetchInbounds = () => request('/inbounds')
 export const fetchOutbounds = () => request('/outbounds')
 export const fetchConfig = () => request('/config')
-export const fetchGeneratedConfig = () => request('/config/generated')
+export const fetchRuntimeConfig = () => request('/config/runtime')
 export const postConfig = (body) =>
   request('/config', { method: 'POST', body: JSON.stringify(body) })
 export const fetchUserLinks = (username) =>

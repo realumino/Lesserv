@@ -6,23 +6,31 @@ conventions, how to run) lives in AGENTS.md at the repo root.
 
 ## What "the config" means in this file
 
-The Xray config is an opaque template the panel preserves verbatim. Any
-milestone phrase like "generate" or "fill the config" means ONLY replacing
-two places in the template:
+The user-provided Xray config is opaque: the panel preserves it verbatim.
+Any milestone phrase like "generate" or "fill the config" means ONLY
+replacing two places in it:
 
 1. `routing.rules` — one rule per outbound: `regexp:.*@TAG$` -> that outbound
 2. `settings.clients` of each VLESS inbound — entries `{id, email}`
 
-Nothing else is ever generated, validated, or interpreted.
+Nothing else is ever generated, validated, or interpreted. The filled
+result the panel writes is called the "runtime config".
 
-## Current status: Milestone 5 done, next milestone TBD
+## Current status: minor improvements stage (no specific milestone)
+
+Milestones 0–5 are done; there is no active milestone now. Work happens as
+small, self-contained improvements with no shared purpose — naming, UI
+polish, cleanups. Latest: renamed the user-provided "template" to "config"
+and the generated file to "runtime config" across files, env vars, API
+routes, and UI.
 
 | # | What | Status |
 |---|------|--------|
 | 0 | Skeleton: FastAPI + SQLite + GET /api/users (seeded demo user) | done (commit f3952e4) |
 | 1 | Full user CRUD + pydantic models (backend/models.py, backend/routers/users.py, ensure_uuids) | done |
-| 2 | Fill template's `routing.rules` + VLESS `clients` from DB users; run/restart Xray subprocess | done |
-| 3 | Endpoints: GET /api/inbounds, /api/outbounds (tags read from template), GET /api/status, POST /api/config (replace template) | done |
-| 4 | React frontend (Vite, plain JS, Tailwind CDN): status bar, user table, add/edit modal with inbound/outbound checkboxes, config tab showing template + generated config; + GET /api/config, GET /api/config/generated | done |
+| 2 | Fill config's `routing.rules` + VLESS `clients` from DB users; run/restart Xray subprocess | done |
+| 3 | Endpoints: GET /api/inbounds, /api/outbounds (tags read from config), GET /api/status, POST /api/config (replace config) | done |
+| 4 | React frontend (Vite, plain JS, Tailwind CDN): status bar, user table, add/edit modal with inbound/outbound checkboxes, config tab showing config + runtime config; + GET /api/config, GET /api/config/runtime | done |
 | 5 | Share links (vless:// URIs): per-user links, copy/QR, REALITY public key derivation | done |
+| — | Minor improvements, no fixed scope (template→config / generated→runtime config rename) | done |
 | later | Xray gRPC stats API, auth, expiry/quota jobs, Docker | deferred |

@@ -2,24 +2,24 @@ import { useEffect, useState } from 'react'
 import * as api from '../api'
 
 /**
- * Config tab: view the template and the generated config side by side,
- * and replace the template with new JSON.
+ * Config tab: view the user-provided config and the runtime config side by
+ * side, and replace the config with new JSON.
  *
- * Why show both: the generated config (what Xray actually reads) is the
- * panel's own output — comparing it against the template makes a skipped
- * or failed sync visible at a glance.
+ * Why show both: the runtime config (what Xray actually reads) is the
+ * panel's own output — comparing it against the user config makes a
+ * skipped or failed sync visible at a glance.
  */
 export default function ConfigPage() {
-  const [template, setTemplate] = useState(undefined) // undefined = loading
-  const [generated, setGenerated] = useState(undefined)
+  const [config, setConfig] = useState(undefined) // undefined = loading
+  const [runtime, setRuntime] = useState(undefined)
   const [text, setText] = useState('')
   const [msg, setMsg] = useState(null) // { ok: bool, text: string }
   const [busy, setBusy] = useState(false)
 
   const load = () => {
-    api.fetchConfig().then(({ data, error }) => setTemplate(error ? null : data))
-    api.fetchGeneratedConfig().then(({ data, error }) =>
-      setGenerated(error ? null : data)
+    api.fetchConfig().then(({ data, error }) => setConfig(error ? null : data))
+    api.fetchRuntimeConfig().then(({ data, error }) =>
+      setRuntime(error ? null : data)
     )
   }
 
@@ -40,7 +40,7 @@ export default function ConfigPage() {
     if (error) {
       setMsg({ ok: false, text: `Save failed: ${error}` })
     } else {
-      setMsg({ ok: true, text: 'Template saved; Xray config regenerated and restarted.' })
+      setMsg({ ok: true, text: 'Config saved; runtime config regenerated and restarted.' })
       setText('')
       load()
     }
@@ -58,21 +58,21 @@ export default function ConfigPage() {
       </div>
       <div className="grid md:grid-cols-2 gap-5">
         <JsonPanel
-          title="Template"
+          title="Config"
           subtitle="the file you provide"
-          value={template}
-          empty="No template loaded yet."
+          value={config}
+          empty="No config loaded yet."
         />
         <JsonPanel
-          title="Config in use"
-          subtitle={subtitleFor(generated)}
-          value={generated === null ? null : generated?.config}
-          empty="Not generated yet — no template loaded or last sync failed."
+          title="Runtime config"
+          subtitle={subtitleFor(runtime)}
+          value={runtime === null ? null : runtime?.config}
+          empty="Not generated yet — no config loaded or last sync failed."
         />
       </div>
       <section className="bg-apple-card rounded-2xl p-5 shadow-sm border border-apple-border">
         <h2 className="text-sm font-semibold text-apple-muted uppercase tracking-wide mb-3">
-          Replace template (paste full JSON)
+          Replace config (paste full JSON)
         </h2>
         <textarea
           className="w-full h-48 bg-apple-bg border border-apple-border rounded-xl p-3 text-xs font-mono text-apple-text placeholder-apple-gray focus:outline-none focus:border-apple-blue focus:ring-2 focus:ring-apple-blue/10 transition-all resize-none"
@@ -123,10 +123,10 @@ function JsonPanel({ title, subtitle, value, empty }) {
   )
 }
 
-/** Subtitle for the generated pane: its last-write time once known. */
-function subtitleFor(generated) {
-  if (generated?.generated_at) {
-    return `regenerated ${new Date(generated.generated_at * 1000).toLocaleString()}`
+/** Subtitle for the runtime pane: its last-write time once known. */
+function subtitleFor(runtime) {
+  if (runtime?.generated_at) {
+    return `regenerated ${new Date(runtime.generated_at * 1000).toLocaleString()}`
   }
   return 'what Xray reads'
 }

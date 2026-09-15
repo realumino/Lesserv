@@ -6,7 +6,7 @@ sync(); everything downstream (config_service, allocator) stays pure and
 testable.
 
 Design rules kept here on purpose:
-- Nothing ever raises: a missing template or binary is an expected state
+- Nothing ever raises: a missing config or binary is an expected state
   on a fresh install, so every step logs a warning and gives up.
 - The process handle is module-level (not app.state) because user_service
   has no access to the app object.
@@ -32,9 +32,9 @@ _lock = threading.Lock()
 def _read_json(path, label):
     """Read a JSON file; return None when it is missing or invalid.
 
-    Why shared: the template and the generated config need the exact same
-    tolerant read — a missing or malformed file is a state to report with
-    a warning, not an exception to raise.
+    Why shared: the user config and the generated runtime config need the
+    exact same tolerant read — a missing or malformed file is a state to
+    report with a warning, not an exception to raise.
     """
     if not os.path.exists(path):
         logger.warning("%s not found at %s", label, path)
@@ -47,34 +47,35 @@ def _read_json(path, label):
             return None
 
 
-def load_template():
-    """Read the user-provided template; return None when missing or invalid.
+def load_config():
+    """Read the user-provided config; return None when missing or invalid.
 
-    Why None instead of raising: "no template yet" is a normal fresh-install
+    Why None instead of raising: "no config yet" is a normal fresh-install
     state — the panel must keep serving users while waiting for the admin
     to drop the file in (or POST one in milestone 3).
     """
-    return _read_json(settings.TEMPLATE_PATH, "template")
+    return _read_json(settings.CONFIG_PATH, "config")
 
 
-def load_config():
-    """Read the generated config Xray was last started with; None if absent.
+def load_runtime_config():
+    """Read the generated runtime config Xray was last started with.
 
-    Why this exists: the Config tab shows it next to the template, so a
-    skipped or failed sync is visible by comparing the two files.
+    Why this exists: the Config tab shows it next to the user config, so a
+    skipped or failed sync is visible by comparing the two files. None when
+    no file exists yet.
     """
-    return _read_json(settings.XRAY_CONFIG_PATH, "generated config")
+    return _read_json(settings.RUNTIME_CONFIG_PATH, "runtime config")
 
 
-def save_template(content):
-    """Atomically write a new template to the template path.
+def save_config(content):
+    """Atomically write a new config to the config path.
 
-    Why this exists: POST /api/config needs a counterpart to load_template().
+    Why this exists: POST /api/config needs a counterpart to load_config().
     A temp file + os.replace keeps the write atomic so nothing reads a
     half-written file. The caller is responsible for supplying valid JSON
-    — the template is opaque; we never validate its structure.
+    — the config is opaque; we never validate its structure.
     """
-    path = settings.TEMPLATE_PATH
+    path = settings.CONFIG_PATH
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp_path = path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
@@ -82,13 +83,13 @@ def save_template(content):
     os.replace(tmp_path, path)
 
 
-def write_config(config):
+def write_runtime_config(config):
     """Atomically write the filled config to the path Xray will read.
 
     Why temp file + os.replace: writing in place could hand Xray a
     half-written file on a crash; the replace is atomic on the same disk.
     """
-    path = settings.XRAY_CONFIG_PATH
+    path = settings.RUNTIME_CONFIG_PATH
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp_path = path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
@@ -96,14 +97,14 @@ def write_config(config):
     os.replace(tmp_path, path)
 
 
-def config_mtime():
-    """Return the generated config's last-write time as a unix timestamp.
+def runtime_mtime():
+    """Return the runtime config's last-write time as a unix timestamp.
 
     Why here and not in the router: routers do HTTP only; this module is
     the one place that touches the filesystem. None when no file exists,
     so the caller can tell "never generated" apart from a real timestamp.
     """
-    path = settings.XRAY_CONFIG_PATH
+    path = settings.RUNTIME_CONFIG_PATH
     if not os.path.exists(path):
         return None
     return int(os.path.getmtime(path))
@@ -140,12 +141,12 @@ def start():
                            settings.XRAY_BINARY)
             return
         _process = subprocess.Popen(
-            [settings.XRAY_BINARY, "run", "-config", settings.XRAY_CONFIG_PATH]
+            [settings.XRAY_BINARY, "run", "-config", settings.RUNTIME_CONFIG_PATH]
         )
         try:
             _process.wait(timeout=2)
             logger.error("Xray exited immediately with code %s; check %s",
-                         _process.returncode, settings.XRAY_CONFIG_PATH)
+                         _process.returncode, settings.RUNTIME_CONFIG_PATH)
             _process = None
         except subprocess.TimeoutExpired:
             logger.info("started Xray pid %s", _process.pid)
@@ -199,20 +200,20 @@ def sync(conn):
     """Regenerate the Xray config from the database and restart Xray.
 
     Why one entry point: user_service calls exactly this after every user
-    change and main calls it once at startup. Malformed templates raise
+    change and main calls it once at startup. Malformed configs raise
     KeyError/TypeError here, which are logged as warnings — a user edit
     must never take the API down.
     """
-    template = load_template()
-    if template is None:
+    config = load_config()
+    if config is None:
         return
     users = db.list_users(conn)
     try:
-        config, warnings = config_service.build_config(template, users)
+        runtime, warnings = config_service.build_config(config, users)
     except (KeyError, TypeError) as error:
-        logger.warning("template looks malformed (%s); skipping sync", error)
+        logger.warning("config looks malformed (%s); skipping sync", error)
         return
     for warning in warnings:
         logger.warning("sync: %s", warning)
-    write_config(config)
+    write_runtime_config(runtime)
     restart()

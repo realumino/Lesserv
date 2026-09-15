@@ -1,4 +1,4 @@
-"""Tests for config_service: turning users + template into a filled config.
+"""Tests for config_service: turning users + config into a filled runtime config.
 
 Run from the repo root:
     python -m unittest tests.test_config_service -v
@@ -9,8 +9,8 @@ import unittest
 from backend.services import config_service
 
 
-def _template():
-    """A tiny stand-in for a real Xray template with one of each piece.
+def _config():
+    """A tiny stand-in for a real Xray config with one of each piece.
 
     Why so small: config_service must only touch routing.rules and VLESS
     clients; a small fixture makes the "everything else survives" checks
@@ -55,7 +55,7 @@ class TestBuildConfig(unittest.TestCase):
     def test_clients_and_rules_filled(self):
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config, warnings = config_service.build_config(_template(), users)
+        config, warnings = config_service.build_config(_config(), users)
 
         self.assertEqual(
             config["inbounds"][0]["settings"]["clients"],
@@ -71,28 +71,28 @@ class TestBuildConfig(unittest.TestCase):
         )
         self.assertEqual(warnings, [])
 
-    def test_template_not_mutated(self):
-        template = _template()
+    def test_config_not_mutated(self):
+        source = _config()
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config_service.build_config(template, users)
+        config_service.build_config(source, users)
 
-        self.assertEqual(template, _template())
+        self.assertEqual(source, _config())
 
     def test_opaque_parts_preserved(self):
-        template = _template()
+        source = _config()
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config, _ = config_service.build_config(template, users)
+        config, _ = config_service.build_config(source, users)
 
-        self.assertEqual(config["log"], template["log"])
-        self.assertEqual(config["outbounds"], template["outbounds"])
+        self.assertEqual(config["log"], source["log"])
+        self.assertEqual(config["outbounds"], source["outbounds"])
         self.assertEqual(config["inbounds"][0]["port"], 443)
 
     def test_unused_vless_inbound_gets_empty_clients(self):
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config, _ = config_service.build_config(_template(), users)
+        config, _ = config_service.build_config(_config(), users)
 
         self.assertEqual(config["inbounds"][1]["settings"]["clients"], [])
 
@@ -103,7 +103,7 @@ class TestBuildConfig(unittest.TestCase):
                   status="disabled"),
         ]
 
-        config, _ = config_service.build_config(_template(), users)
+        config, _ = config_service.build_config(_config(), users)
 
         self.assertEqual(
             config["inbounds"][0]["settings"]["clients"],
@@ -111,10 +111,10 @@ class TestBuildConfig(unittest.TestCase):
         )
 
     def test_block_auto_injected_and_catch_all_present(self):
-        template = _template()
-        template["outbounds"] = [{"tag": "OUTBOUND", "protocol": "wireguard"}]
+        source = _config()
+        source["outbounds"] = [{"tag": "OUTBOUND", "protocol": "wireguard"}]
 
-        config, warnings = config_service.build_config(template, [])
+        config, warnings = config_service.build_config(source, [])
 
         tags = [o["tag"] for o in config["outbounds"]]
         self.assertIn("BLOCK", tags)
@@ -129,43 +129,43 @@ class TestBuildConfig(unittest.TestCase):
         )
 
     def test_missing_routing_is_auto_created(self):
-        template = _template()
-        del template["routing"]
+        source = _config()
+        del source["routing"]
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config, warnings = config_service.build_config(template, users)
+        config, warnings = config_service.build_config(source, users)
 
         self.assertIn("routing", config)
         self.assertGreater(len(config["routing"]["rules"]), 0)
 
     def test_user_rules_are_preserved_and_extended(self):
-        template = _template()
+        source = _config()
         user_rule = {
             "user": ["regexp:.*@CUSTOM$"],
             "outboundTag": "OUTBOUND",
         }
-        template["routing"]["rules"] = [user_rule]
+        source["routing"]["rules"] = [user_rule]
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config, _ = config_service.build_config(template, users)
+        config, _ = config_service.build_config(source, users)
 
         self.assertEqual(config["routing"]["rules"][0], user_rule)
         self.assertGreater(len(config["routing"]["rules"]), 1)
 
     def test_routing_other_keys_preserved(self):
-        template = _template()
-        template["routing"]["domainStrategy"] = "IPOnDemand"
+        source = _config()
+        source["routing"]["domainStrategy"] = "IPOnDemand"
         users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
 
-        config, _ = config_service.build_config(template, users)
+        config, _ = config_service.build_config(source, users)
 
         self.assertEqual(config["routing"]["domainStrategy"], "IPOnDemand")
         self.assertIn("rules", config["routing"])
 
     def test_outbound_tags_excludes_block(self):
-        template = _template()
+        source = _config()
 
-        tags = config_service.outbound_tags(template)
+        tags = config_service.outbound_tags(source)
 
         self.assertNotIn("BLOCK", tags)
         self.assertIn("OUTBOUND", tags)

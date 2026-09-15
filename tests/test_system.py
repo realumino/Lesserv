@@ -13,8 +13,8 @@ from unittest import mock
 from backend.services import xray_service
 
 
-def _fixture_template():
-    """A minimal template with two inbounds and two outbounds for tests."""
+def _fixture_config():
+    """A minimal config with two inbounds and two outbounds for tests."""
     return {
         "log": {"loglevel": "debug"},
         "routing": {"rules": []},
@@ -33,75 +33,75 @@ def _fixture_template():
     }
 
 
-class TestSaveTemplate(unittest.TestCase):
-    """Atomically write a template dict to the configured path."""
+class TestSaveConfig(unittest.TestCase):
+    """Atomically write a config dict to the configured path."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.patcher = mock.patch(
-            "backend.services.xray_service.settings.TEMPLATE_PATH",
-            os.path.join(self.tmpdir, "template.json"),
+            "backend.services.xray_service.settings.CONFIG_PATH",
+            os.path.join(self.tmpdir, "config.json"),
         )
         self.patcher.start()
 
     def tearDown(self):
         self.patcher.stop()
 
-    def test_save_template_writes_valid_json(self):
+    def test_save_config_writes_valid_json(self):
         content = {"inbounds": [], "outbounds": [], "routing": {}}
-        xray_service.save_template(content)
+        xray_service.save_config(content)
 
-        path = os.path.join(self.tmpdir, "template.json")
+        path = os.path.join(self.tmpdir, "config.json")
         self.assertTrue(os.path.exists(path))
         with open(path, encoding="utf-8") as handle:
             written = json.load(handle)
         self.assertEqual(written, content)
 
-    def test_save_template_creates_directory(self):
-        deeper = os.path.join(self.tmpdir, "nested", "template.json")
+    def test_save_config_creates_directory(self):
+        deeper = os.path.join(self.tmpdir, "nested", "config.json")
         self.patcher.stop()
         self.patcher = mock.patch(
-            "backend.services.xray_service.settings.TEMPLATE_PATH", deeper
+            "backend.services.xray_service.settings.CONFIG_PATH", deeper
         )
         self.patcher.start()
 
-        xray_service.save_template({"test": True})
+        xray_service.save_config({"test": True})
         self.assertTrue(os.path.exists(deeper))
 
 
-class TestLoadConfig(unittest.TestCase):
-    """Read the generated config back, tolerating missing/corrupt files."""
+class TestLoadRuntimeConfig(unittest.TestCase):
+    """Read the generated runtime config back, tolerating missing/corrupt files."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmpdir, "xray_config.json")
+        self.path = os.path.join(self.tmpdir, "xray_runtime.json")
         self.patcher = mock.patch(
-            "backend.services.xray_service.settings.XRAY_CONFIG_PATH", self.path
+            "backend.services.xray_service.settings.RUNTIME_CONFIG_PATH", self.path
         )
         self.patcher.start()
 
     def tearDown(self):
         self.patcher.stop()
 
-    def test_load_config_returns_dict_after_write(self):
+    def test_load_runtime_config_returns_dict_after_write(self):
         content = {"inbounds": [], "outbounds": [], "routing": {}}
-        xray_service.write_config(content)
-        self.assertEqual(xray_service.load_config(), content)
+        xray_service.write_runtime_config(content)
+        self.assertEqual(xray_service.load_runtime_config(), content)
 
-    def test_load_config_none_when_missing(self):
-        self.assertIsNone(xray_service.load_config())
+    def test_load_runtime_config_none_when_missing(self):
+        self.assertIsNone(xray_service.load_runtime_config())
 
-    def test_load_config_none_when_malformed(self):
+    def test_load_runtime_config_none_when_malformed(self):
         with open(self.path, "w", encoding="utf-8") as handle:
             handle.write("{not json")
-        self.assertIsNone(xray_service.load_config())
+        self.assertIsNone(xray_service.load_runtime_config())
 
-    def test_config_mtime_none_when_missing(self):
-        self.assertIsNone(xray_service.config_mtime())
+    def test_runtime_mtime_none_when_missing(self):
+        self.assertIsNone(xray_service.runtime_mtime())
 
-    def test_config_mtime_returns_timestamp_after_write(self):
-        xray_service.write_config({"a": 1})
-        self.assertIsInstance(xray_service.config_mtime(), int)
+    def test_runtime_mtime_returns_timestamp_after_write(self):
+        xray_service.write_runtime_config({"a": 1})
+        self.assertIsInstance(xray_service.runtime_mtime(), int)
 
 
 class TestStatus(unittest.TestCase):
@@ -136,9 +136,9 @@ class TestStatus(unittest.TestCase):
 class TestSystemRouter(unittest.TestCase):
     """Call router endpoint functions directly with mocked dependencies."""
 
-    @mock.patch("backend.routers.system.xray_service.load_template")
+    @mock.patch("backend.routers.system.xray_service.load_config")
     def test_inbounds_returns_summaries(self, mock_load):
-        mock_load.return_value = _fixture_template()
+        mock_load.return_value = _fixture_config()
 
         from backend.routers.system import get_inbounds
         result = get_inbounds()
@@ -153,8 +153,8 @@ class TestSystemRouter(unittest.TestCase):
             ],
         )
 
-    @mock.patch("backend.routers.system.xray_service.load_template")
-    def test_inbounds_503_when_no_template(self, mock_load):
+    @mock.patch("backend.routers.system.xray_service.load_config")
+    def test_inbounds_503_when_no_config(self, mock_load):
         mock_load.return_value = None
 
         from backend.routers.system import get_inbounds
@@ -163,9 +163,9 @@ class TestSystemRouter(unittest.TestCase):
             get_inbounds()
         self.assertEqual(ctx.exception.status_code, 503)
 
-    @mock.patch("backend.routers.system.xray_service.load_template")
+    @mock.patch("backend.routers.system.xray_service.load_config")
     def test_outbounds_returns_summaries(self, mock_load):
-        mock_load.return_value = _fixture_template()
+        mock_load.return_value = _fixture_config()
 
         from backend.routers.system import get_outbounds
         result = get_outbounds()
@@ -178,8 +178,8 @@ class TestSystemRouter(unittest.TestCase):
             ],
         )
 
-    @mock.patch("backend.routers.system.xray_service.load_template")
-    def test_outbounds_503_when_no_template(self, mock_load):
+    @mock.patch("backend.routers.system.xray_service.load_config")
+    def test_outbounds_503_when_no_config(self, mock_load):
         mock_load.return_value = None
 
         from backend.routers.system import get_outbounds
@@ -190,9 +190,9 @@ class TestSystemRouter(unittest.TestCase):
 
     @mock.patch("backend.routers.system.db.list_users")
     @mock.patch("backend.routers.system.xray_service.status")
-    @mock.patch("backend.routers.system.xray_service.load_template")
+    @mock.patch("backend.routers.system.xray_service.load_config")
     def test_status_returns_composite(self, mock_load, mock_status, mock_list):
-        mock_load.return_value = _fixture_template()
+        mock_load.return_value = _fixture_config()
         mock_status.return_value = {"running": True, "pid": 42}
         mock_list.return_value = [{"username": "alice"}, {"username": "bob"}]
 
@@ -201,20 +201,20 @@ class TestSystemRouter(unittest.TestCase):
 
         self.assertEqual(
             result,
-            {"template_loaded": True, "xray_running": True,
+            {"config_loaded": True, "xray_running": True,
              "xray_pid": 42, "user_count": 2},
         )
 
-    @mock.patch("backend.routers.system.xray_service.load_template")
-    def test_get_config_returns_template(self, mock_load):
-        template = _fixture_template()
-        mock_load.return_value = template
+    @mock.patch("backend.routers.system.xray_service.load_config")
+    def test_get_config_returns_config(self, mock_load):
+        config = _fixture_config()
+        mock_load.return_value = config
 
         from backend.routers.system import get_config
-        self.assertEqual(get_config(), template)
+        self.assertEqual(get_config(), config)
 
-    @mock.patch("backend.routers.system.xray_service.load_template")
-    def test_get_config_404_when_no_template(self, mock_load):
+    @mock.patch("backend.routers.system.xray_service.load_config")
+    def test_get_config_404_when_no_config(self, mock_load):
         mock_load.return_value = None
 
         from backend.routers.system import get_config
@@ -223,32 +223,32 @@ class TestSystemRouter(unittest.TestCase):
             get_config()
         self.assertEqual(ctx.exception.status_code, 404)
 
-    @mock.patch("backend.routers.system.xray_service.config_mtime")
-    @mock.patch("backend.routers.system.xray_service.load_config")
-    def test_generated_config_returns_envelope(self, mock_load, mock_mtime):
+    @mock.patch("backend.routers.system.xray_service.runtime_mtime")
+    @mock.patch("backend.routers.system.xray_service.load_runtime_config")
+    def test_runtime_config_returns_envelope(self, mock_load, mock_mtime):
         mock_load.return_value = {"inbounds": [], "outbounds": []}
         mock_mtime.return_value = 1789000000
 
-        from backend.routers.system import get_generated_config
-        result = get_generated_config()
+        from backend.routers.system import get_runtime_config
+        result = get_runtime_config()
 
         self.assertEqual(
             result,
             {"config": {"inbounds": [], "outbounds": []}, "generated_at": 1789000000},
         )
 
-    @mock.patch("backend.routers.system.xray_service.load_config")
-    def test_generated_config_404_when_missing(self, mock_load):
+    @mock.patch("backend.routers.system.xray_service.load_runtime_config")
+    def test_runtime_config_404_when_missing(self, mock_load):
         mock_load.return_value = None
 
-        from backend.routers.system import get_generated_config
+        from backend.routers.system import get_runtime_config
         from fastapi import HTTPException
         with self.assertRaises(HTTPException) as ctx:
-            get_generated_config()
+            get_runtime_config()
         self.assertEqual(ctx.exception.status_code, 404)
 
     @mock.patch("backend.routers.system.xray_service.sync")
-    @mock.patch("backend.routers.system.xray_service.save_template")
+    @mock.patch("backend.routers.system.xray_service.save_config")
     def test_post_config_writes_and_syncs(self, mock_save, mock_sync):
         body = {"inbounds": [], "outbounds": [], "routing": {}}
 

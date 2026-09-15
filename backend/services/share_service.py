@@ -1,4 +1,4 @@
-"""Build VLESS share links from a user and the Xray template.
+"""Build VLESS share links from a user and the Xray config.
 
 Why this is a separate service: turning users + inbounds into `vless://`
 URIs is a pure transformation. It never touches the filesystem or
@@ -27,7 +27,7 @@ def resolve_address(configured, inbound):
     return listen
 
 
-def has_usable_address(template, configured):
+def has_usable_address(config, configured):
     """Return True when at least one inbound has a resolvable address.
 
     Why this exists: the router needs to distinguish "no address" (409)
@@ -35,7 +35,7 @@ def has_usable_address(template, configured):
     """
     if configured:
         return True
-    for inbound in template.get("inbounds", []):
+    for inbound in config.get("inbounds", []):
         if resolve_address(None, inbound) is not None:
             return True
     return False
@@ -178,7 +178,7 @@ def _build_uri(email, uuid, address, port, params, inbound_tag):
     return f"vless://{uuid}@{host}:{port}?{query}#{quote(remark, safe='')}"
 
 
-def links_for_user(user, template, configured_address):
+def links_for_user(user, config, configured_address):
     """Return all share links for a user plus warnings.
 
     Why one link per (inbound, outbound) pair: the UUID differs per
@@ -189,15 +189,15 @@ def links_for_user(user, template, configured_address):
     warnings = []
     links = []
 
-    template_outbounds = {
-        outbound["tag"] for outbound in template.get("outbounds", [])
+    config_outbounds = {
+        outbound["tag"] for outbound in config.get("outbounds", [])
     }
-    template_inbounds = {
-        inbound["tag"]: inbound for inbound in template.get("inbounds", [])
+    config_inbounds = {
+        inbound["tag"]: inbound for inbound in config.get("inbounds", [])
     }
 
     for outbound_tag in sorted(user.get("allowed_outbounds", [])):
-        if outbound_tag not in template_outbounds:
+        if outbound_tag not in config_outbounds:
             warnings.append(f"unknown outbound '{outbound_tag}'")
             continue
 
@@ -208,7 +208,7 @@ def links_for_user(user, template, configured_address):
             continue
 
         for inbound_tag in sorted(user.get("allowed_inbounds", [])):
-            inbound = template_inbounds.get(inbound_tag)
+            inbound = config_inbounds.get(inbound_tag)
             if not inbound:
                 warnings.append(f"unknown inbound '{inbound_tag}'")
                 continue

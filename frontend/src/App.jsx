@@ -7,7 +7,7 @@ import ConfigPage from './components/ConfigPage'
 import ShareModal from './components/ShareModal'
 
 /**
- * Root component: owns all shared state (users, status, template metadata)
+ * Root component: owns all shared state (users, status, config metadata)
  * and coordinates refreshes after every mutation.
  *
  * Why the state lives here: UserTable, UserForm, and StatusBar all need the

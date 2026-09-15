@@ -24,8 +24,8 @@ differently from other panels:
 
 **Current state (after milestone 5):** the panel stores users in SQLite,
 serves a REST API for user CRUD, after every user change regenerates the
-Xray config and restarts Xray, exposes endpoints for the template
-structure (inbounds/outbounds tags), system health, template
+runtime Xray config and restarts Xray, exposes endpoints for the config
+structure (inbounds/outbounds tags), system health, config
 read/replace, and per-user VLESS share links — and ships a React SPA
 (Vite, plain JS) that consumes all of it: status bar, user table,
 add/edit modal, config tab, and a share-links modal with copy/QR.
@@ -57,11 +57,11 @@ SQLite (data/panel.db)
 And the Xray branch, which hangs off the same service layer:
 
 ```
-template (config/xray_template.json — user-provided, gitignored)
+config (config/xray_config.json — user-provided, gitignored)
    │
 config_service + allocator   (pure, no I/O)
    │
-data/xray_config.json        (filled config, gitignored)
+data/xray_runtime.json       (filled runtime config, gitignored)
    │
 xray_service                 (subprocess lifecycle)
    │
@@ -155,7 +155,7 @@ name, this file is where to look.
 | GET | /api/users/{username} | 200 | 404 |
 | PUT | /api/users/{username} | 200 (partial update) | 404 |
 | DELETE | /api/users/{username} | 204 | 404 |
-| GET | /api/users/{username}/links | 200 share links | 404 unknown user, 503 no template, 409 no server address |
+| GET | /api/users/{username}/links | 200 share links | 404 unknown user, 503 no config, 409 no server address |
 
 Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
 
@@ -163,41 +163,41 @@ Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
 
 Six endpoints that the React frontend uses to populate
 inbound/outbound checkbox lists, show the status bar, and view/replace
-the template. All share `prefix="/api"` and `tags=["system"]`.
+the config. All share `prefix="/api"` and `tags=["system"]`.
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| GET | /api/inbounds | 200 `[{tag, protocol, network, security}]` | 503 template not loaded |
-| GET | /api/outbounds | 200 `[{tag, protocol}]` | 503 template not loaded |
-| GET | /api/status | 200 `{template_loaded, xray_running, xray_pid, user_count}` | — |
-| GET | /api/config | 200 template JSON | 404 no template yet |
-| GET | /api/config/generated | 200 `{config, generated_at}` | 404 not generated yet |
+| GET | /api/inbounds | 200 `[{tag, protocol, network, security}]` | 503 config not loaded |
+| GET | /api/outbounds | 200 `[{tag, protocol}]` | 503 config not loaded |
+| GET | /api/status | 200 `{config_loaded, xray_running, xray_pid, user_count}` | — |
+| GET | /api/config | 200 config JSON | 404 no config yet |
+| GET | /api/config/runtime | 200 `{config, generated_at}` | 404 not generated yet |
 | POST | /api/config | 200 `{"message": "config updated"}` | 422 invalid JSON body |
 
-- `/api/inbounds` and `/api/outbounds` call `xray_service.load_template()`
+- `/api/inbounds` and `/api/outbounds` call `xray_service.load_config()`
   and then `config_service.inbound_summaries()` / `outbound_summaries()`.
   The inbound response includes `network` and `security` (from
   `streamSettings`, empty string when absent) so the frontend can label
   checkboxes, e.g. "REALITY (tcp + reality)". They return 503 when the
-  template is missing (an empty list would conflate "zero inbounds exist"
-  with "no template loaded").
-- `/api/status` bundles `load_template()`, `xray_service.status()`, and
+  config is missing (an empty list would conflate "zero inbounds exist"
+  with "no config loaded").
+- `/api/status` bundles `load_config()`, `xray_service.status()`, and
   `db.list_users()` into one composite response so the frontend can render
   a status bar with one HTTP call.
-- `GET /api/config` returns the current template for the Config tab. It
+- `GET /api/config` returns the current user config for the Config tab. It
   answers 404 (not 503 like the tag endpoints) because "no file yet" is
   the expected state on a fresh install — the page renders an empty
   state, not an error.
-- `GET /api/config/generated` returns the config Xray was last started
-  with as `{config, generated_at}` (the file's mtime). Same 404 logic:
-  before the first successful sync the file does not exist. The
-  timestamp lets the UI show whether the generated config predates the
-  user's last change — template and output side by side.
-- `POST /api/config` accepts a raw JSON body (the template is opaque — the
+- `GET /api/config/runtime` returns the runtime config Xray was last
+  started with as `{config, generated_at}` (the file's mtime). Same 404
+  logic: before the first successful sync the file does not exist. The
+  timestamp lets the UI show whether the runtime config predates the
+  user's last change — user config and output side by side.
+- `POST /api/config` accepts a raw JSON body (the config is opaque — the
   panel never validates its structure), writes it atomically via
-  `xray_service.save_template()`, and calls `xray_service.sync()` to
-  regenerate the config and restart Xray. A fresh install gets its first
-  template this way instead of dropping a file into `config/`.
+  `xray_service.save_config()`, and calls `xray_service.sync()` to
+  regenerate the runtime config and restart Xray. A fresh install gets its
+  first config this way instead of dropping a file into `config/`.
 
 ### backend/services/user_service.py — the business rules
 
@@ -223,64 +223,65 @@ database changed" becomes "the real system must react" — the routers
 never know it happens. Failed operations (the 404 paths) skip the sync,
 so a no-op request does not bounce Xray.
 
-### backend/services/config_service.py — turning users into a config
+### backend/services/config_service.py — turning users into a runtime config
 
 A pure transformer: dicts in, dicts out, no files, no SQLite, no Xray.
 This is what makes the milestone testable without a running server.
 
 - `user_permissions(users)` — reduces the user list to
   `{username: {allowed_inbounds, allowed_outbounds}}` for **active users
-  only**. Disabled users vanish from the config on the next sync.
+  only**. Disabled users vanish from the runtime config on the next sync.
 - `uuids_map(users)` — merges all active users' uuid maps into one flat
   `{email: uuid}` dict, the shape the allocator wants.
-- `inbound_summaries(template)` — extracts `{tag, protocol, network, security}`
+- `inbound_summaries(config)` — extracts `{tag, protocol, network, security}`
   per inbound. `network` and `security` come from `streamSettings` (empty
   string when absent) so the frontend can label checkboxes.
-- `outbound_tags(template)` — returns the tag strings of the outbounds for
+- `outbound_tags(config)` — returns the tag strings of the outbounds for
   the allocator (which only needs tags). BLOCK is excluded because it is a
   system catch-all, not a routable exit node — no `regexp:.*@BLOCK$` rule
   is ever generated.
-- `outbound_summaries(template)` — returns `[{tag, protocol}]` for the
+- `outbound_summaries(config)` — returns `[{tag, protocol}]` for the
   frontend via `/api/outbounds`.
-- `clients_and_rules(users, template)` — calls the allocator, then appends
+- `clients_and_rules(users, config)` — calls the allocator, then appends
   the trailing catch-all rule `{"outboundTag": "BLOCK"}` that drops any
   traffic whose email matched no rule. The catch-all lives here (not in
   the allocator) because it is panel policy and the allocator must stay a
   verbatim copy. BLOCK is guaranteed to exist by this point because
   `build_config` auto-injects it.
-- `build_config(template, users)` — the entry point: `copy.deepcopy`s the
-  template, auto-injects a `{"tag": "BLOCK", "protocol": "blackhole"}`
+- `build_config(config, users)` — the entry point: `copy.deepcopy`s the
+  config, auto-injects a `{"tag": "BLOCK", "protocol": "blackhole"}`
   outbound when none exists, replaces `settings.clients` of every VLESS
   inbound (an empty list when nobody is allocated to it; non-VLESS inbounds
   untouched) and appends generated rules to `routing.rules` (auto-creating
   the `routing` section when absent, extending instead of replacing so
-  pre-existing user rules survive). Returns `(config, warnings)`.
+  pre-existing user rules survive). Returns `(runtime, warnings)`.
 
-Everything else in the template is preserved exactly — the opaque-template
-rule. The copy also guarantees the caller's template dict survives
+Everything else in the config is preserved exactly — the opaque-config
+rule. The copy also guarantees the caller's config dict survives
 untouched across syncs.
 
 ### backend/services/xray_service.py — the Xray side of the panel
 
 The only module that touches the filesystem and the subprocess. Nothing
-in it ever raises: a missing template or binary is a normal state, so each
+in it ever raises: a missing config or binary is a normal state, so each
 step logs a warning and gives up — a user edit must never take the API
 down.
 
-- `load_template()` / `load_config()` — tolerant JSON readers for
-  `settings.TEMPLATE_PATH` and `settings.XRAY_CONFIG_PATH` (the generated
-  config); both return `None` when the file is missing or invalid, with a
-  warning logged. They share the private `_read_json(path, label)` helper
-  — a missing file is a state to report, not an exception to raise.
-- `save_template(content)` — the write counterpart of `load_template()`.
-  Writes `content` (a dict) to `settings.TEMPLATE_PATH` atomically (temp
+- `load_config()` / `load_runtime_config()` — tolerant JSON readers for
+  `settings.CONFIG_PATH` (the user-provided config) and
+  `settings.RUNTIME_CONFIG_PATH` (the generated runtime config); both
+  return `None` when the file is missing or invalid, with a warning
+  logged. They share the private `_read_json(path, label)` helper — a
+  missing file is a state to report, not an exception to raise.
+- `save_config(content)` — the write counterpart of `load_config()`.
+  Writes `content` (a dict) to `settings.CONFIG_PATH` atomically (temp
   file + `os.replace`). Called by `POST /api/config`; the content is always
   a valid JSON-serialisable dict at this point because FastAPI rejects
   non-JSON bodies as 422.
-- `write_config(config)` — writes to `settings.XRAY_CONFIG_PATH`
+- `write_runtime_config(config)` — writes to `settings.RUNTIME_CONFIG_PATH`
   atomically: dump to a `.tmp` file, then `os.replace`, so Xray can never
   read a half-written config.
-- `config_mtime()` — the generated config's last-write unix timestamp
+- `runtime_mtime()` — the runtime config's last-write unix timestamp
   (`None` when absent). Lives here, not in the router, because only this
   module touches the filesystem; the Config tab displays it.
 - `start()` — launches `[binary, "run", "-config", path]` via
@@ -295,10 +296,10 @@ down.
 - `status()` — returns `{"running": bool, "pid": int | None}` by reading
   the module-level `_process` handle. Read-only, no lock, used by
   `GET /api/status` to show process health.
-- `sync(conn)` — the single entry point: load template, list users, build
-  the config, log the allocator warnings, write, restart. Called by
+- `sync(conn)` — the single entry point: load config, list users, build
+  the runtime config, log the allocator warnings, write, restart. Called by
   `user_service` after every user change and by `main` at startup. A
-  malformed template (missing keys) raises `KeyError`/`TypeError` inside
+  malformed config (missing keys) raises `KeyError`/`TypeError` inside
   `build_config`; sync catches those, warns, and returns.
 
 The process handle is module-level (not `app.state`) because user_service
@@ -307,7 +308,7 @@ start/stop because sync runs in FastAPI's worker threads.
 
 ### backend/services/share_service.py — turning users into share links
 
-Pure transformer: it takes a user, the loaded template, and the
+Pure transformer: it takes a user, the loaded config, and the
 configured server address and returns `vless://` URIs plus warnings.
 No files, no SQLite, no subprocess.
 
@@ -315,31 +316,31 @@ No files, no SQLite, no subprocess.
   an inbound. The configured `LESSERV_SERVER_ADDRESS` wins; otherwise it
   falls back to the inbound's `listen` unless that is a wildcard
   (`0.0.0.0` or `::`).
-- `has_usable_address(template, configured)` — returns True when at
+- `has_usable_address(config, configured)` — returns True when at
   least one inbound can produce a resolvable address, so the router can
   answer 409 before wasting time building links.
 - `_transport_params(inbound)` / `_security_params(inbound)` — extract
   the transport (type, path, host, mode, serviceName) and security
   (tls/reality sni, fp, pbk, sid, spx) query parameters from the
   inbound's `streamSettings`.
-- `links_for_user(user, template, configured_address)` — produces one
+- `links_for_user(user, config, configured_address)` — produces one
   `{inbound, outbound, email, uri}` entry per allowed
   `(inbound, outbound)` pair. Skips non-VLESS inbounds, unknown tags,
   missing ports, and missing addresses with warnings. Disabled users
   still get links with a warning so the admin sees what would be shared.
 
 Why the public key is derived here: REALITY links need the server's
-public key (`pbk`), but the template only stores the private key.
+public key (`pbk`), but the config only stores the private key.
 `share_service` calls `backend.core.x25519.derive_public_key`, a pure-
 Python RFC 7748 Montgomery ladder, so no new dependency is required.
 
 ### backend/core/x25519.py — pure-Python X25519 public-key derivation
 
 A small, dependency-free curve25519 implementation used only to derive
-REALITY public keys from the template's `privateKey`. It clamps the
+REALITY public keys from the config's `privateKey`. It clamps the
 scalar and runs the Montgomery ladder over `2**255 - 19`, validating
 itself against RFC 7748 §6.1 test vectors and a cross-implementation
-check for the project's template key.
+check for the project's config key.
 
 ### backend/core/allocator.py — the copied allocation brain
 
@@ -358,17 +359,17 @@ Module-level constants read from environment variables with repo-root
 defaults:
 
 | setting | default | meaning |
-|---|---|---|---|
-| `TEMPLATE_PATH` | `config/xray_template.json` | user-provided semi-complete config |
-| `XRAY_CONFIG_PATH` | `data/xray_config.json` | filled config the panel writes |
+|---|---|---|
+| `CONFIG_PATH` | `config/xray_config.json` | user-provided config the panel fills |
+| `RUNTIME_CONFIG_PATH` | `data/xray_runtime.json` | filled runtime config the panel writes |
 | `XRAY_BINARY` | `xray` | executable name or absolute path |
 | `SERVER_ADDRESS` | `""` | public server domain/IP used in share links |
 
 
-The template lives in `config/`, a git-tracked folder whose `.gitignore`
+The user config lives in `config/`, a git-tracked folder whose `.gitignore`
 excludes everything — the admin drops their file there and it is never
-committed. Milestone 3's `POST /api/config` will replace that file via the
-API.
+committed. `POST /api/config` can also replace that file via the API. The
+generated runtime config lives in `data/` (gitignored), next to `panel.db`.
 
 ### backend/db.py — the only place with SQL
 
@@ -382,7 +383,7 @@ API.
   runs on every startup).
 - `seed(conn)` — inserts the demo user with `INSERT OR IGNORE`
   (idempotent; never duplicates). Its tags (`REALITY`/`XHTTP` inbounds,
-  `OUTBOUND` outbound) mirror the typical template layout so the demo
+  `OUTBOUND` outbound) mirror the typical config layout so the demo
   client actually matches a routing rule instead of the BLOCK catch-all.
 - `list_users(conn)` / `get_user(conn, username)` — SELECTs. `get_user`
   returns None when missing.
@@ -408,10 +409,10 @@ to the backend by absolute URL: `vite.config.js` proxies `/api/*` to
   non-2xx response becomes `error = body.detail || "HTTP <status>"`.
 - `src/App.jsx` — owns all shared state: users, status, the inbound /
   outbound tag lists (fetched once on mount — they only change when the
-  template changes), the active tab, and which form is open. A single
+  config changes), the active tab, and which form is open. A single
   `refresh()` re-fetches users + status after every mutation. State lives
   here (not in the children) so one refresh re-renders everything.
-- `src/components/StatusBar.jsx` — dumb header: template/Xray badges, PID,
+- `src/components/StatusBar.jsx` — dumb header: config/Xray badges, PID,
   user count, from the `/api/status` object App hands it.
 - `src/components/UserTable.jsx` — dumb table with loading / error /
   empty states; delete goes through `window.confirm` then App's callback.
@@ -423,12 +424,12 @@ to the backend by absolute URL: `vite.config.js` proxies `/api/*` to
   the tag lists with `network`/`security` shown as hints. Client-side
   validation is UX-only; the backend re-validates everything.
 - `src/components/ConfigPage.jsx` — two read-only JSON panes side by
-  side: the template (`GET /api/config`) and the generated config
-  (`GET /api/config/generated`, its `generated_at` shown under the
+  side: the user config (`GET /api/config`) and the runtime config
+  (`GET /api/config/runtime`, its `generated_at` shown under the
   title), so a skipped or failed sync is visible by comparing the two.
   Below them, a textarea accepts pasted JSON, validates with `JSON.parse`
   client-side, and POSTs it; a Refresh button and the post-save path both
-  re-fetch the panes instead of trusting local state. The template stays
+  re-fetch the panes instead of trusting local state. The config stays
   opaque here too: the page checks syntax, never structure.
 - `src/components/ShareModal.jsx` — per-user share-link modal. Fetches
   `GET /api/users/{username}/links`, lists each inbound/outbound pair
@@ -448,20 +449,20 @@ All tests use stdlib `unittest` (no extra deps).
 - `tests/test_allocator.py` — the copied allocator in isolation: clients
   per inbound, one rule per outbound tag, warnings for non-VLESS inbounds
   and missing uuids.
-- `tests/test_config_service.py` — a tiny fixture template proves the
+- `tests/test_config_service.py` — a tiny fixture config proves the
   fill: clients injected, rules + BLOCK catch-all replaced, disabled users
   excluded, unused VLESS inbounds emptied, everything else preserved
-  verbatim, and the caller's template dict never mutated.
+  verbatim, and the caller's config dict never mutated.
 - `tests/test_system.py` — tests the newer `xray_service` functions
-  (`save_template` atomic write and directory creation; `status` for
-  running/exited/none states; `load_config` and `config_mtime` for
-  missing/valid files), plus the six router endpoints called directly
-  with mocked dependencies (503 on missing template, correct
-  summaries/tags, composite status response, template read 200/404,
-  generated-config envelope 200/404, config write-and-sync flow).
+  (`save_config` atomic write and directory creation; `status` for
+  running/exited/none states; `load_runtime_config` and `runtime_mtime`
+  for missing/valid files), plus the six router endpoints called directly
+  with mocked dependencies (503 on missing config, correct
+  summaries/tags, composite status response, config read 200/404,
+  runtime-config envelope 200/404, config write-and-sync flow).
 - `tests/test_x25519.py` — validates the pure-Python X25519
   implementation against RFC 7748 §6.1 test vectors and a cross-
-  implementation check for the project's template private key.
+  implementation check for the project's config private key.
 - `tests/test_share_service.py` — tests URI generation for raw/reality,
   xhttp, and ws transports; address resolution/fallback; wildcard
   listen handling; and the `GET /api/users/{username}/links` router
@@ -484,11 +485,11 @@ All tests use stdlib `unittest` (no extra deps).
    `db.create_user` runs the INSERT and commits.
 8. The returned dict is validated against `response_model=UserOut` and
    serialized to JSON; uvicorn writes the 201 response to the socket.
-9. Back in the service, `xray_service.sync(conn)` runs: the template is
-   re-read, the config rebuilt with the new user's client entries, written
-   to `data/xray_config.json`, and Xray is restarted. Every failure along
-   the way is logged and swallowed — a broken template or missing binary
-   cannot turn a user edit into a 500.
+9. Back in the service, `xray_service.sync(conn)` runs: the config is
+   re-read, the runtime config rebuilt with the new user's client entries,
+   written to `data/xray_runtime.json`, and Xray is restarted. Every
+   failure along the way is logged and swallowed — a broken config or
+   missing binary cannot turn a user edit into a 500.
 
 ## The users table
 

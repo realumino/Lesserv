@@ -25,19 +25,20 @@ wrong documentation is worse than none.
 
 - Backend: FastAPI + plain `sqlite3` (no ORM). JSON columns for
   allowed_inbounds / allowed_outbounds / uuids.
-- v1 user sync = regenerate full config + restart Xray. No Xray gRPC API in v1 (deferred).
-- Xray config is an opaque template: the panel only FILLS routing.rules
+- v1 user sync = regenerate full runtime config + restart Xray. No Xray gRPC API in v1 (deferred).
+- The user's Xray config is opaque: the panel only FILLS routing.rules
   and VLESS inbounds' settings.clients. Never generate, validate, or
-/  interpret the rest of it.
+  interpret the rest of it.
 - Only VLESS. UUID per (user, outbound) pair, stable across changes.
 - No auth in v1.
 - File map: backend/main.py (app + lifespan), backend/db.py (all SQLite),
   backend/services/* (business logic: user_service, config_service,
   xray_service), backend/core/allocator.py (copy of vless_allocator from
   sibling repo xray_multi_inout_generator), backend/settings.py
-  (env-overridable: template path, generated config path, Xray binary,
-  server address for share links). Template goes in config/
-  (gitignored dir, user-provided), generated config in data/.
+  (env-overridable: config path, runtime config path, Xray binary,
+  server address for share links). The user-provided config goes in
+  config/ (gitignored dir, user-provided); the generated runtime config
+  goes in data/.
 
 ## Conventions (user requirement — non-negotiable)
 

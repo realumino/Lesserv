@@ -1,4 +1,4 @@
-"""Build the filled Xray config from the template and the users table.
+"""Build the filled runtime Xray config from the user config and users.
 
 Why this exists: turning DB users into `settings.clients` and
 `routing.rules` is a pure transformation — no files, no subprocesses, no
@@ -41,7 +41,7 @@ def uuids_map(users):
     return merged
 
 
-def inbound_summaries(template):
+def inbound_summaries(config):
     """Extract {tag, protocol, network, security} from every inbound.
 
     Why this exists: the allocator only needs tag + protocol; the API
@@ -49,7 +49,7 @@ def inbound_summaries(template):
     richer checkboxes. Extra fields in the dict don't hurt the allocator.
     """
     result = []
-    for inbound in template["inbounds"]:
+    for inbound in config["inbounds"]:
         stream = inbound.get("streamSettings") or {}
         result.append({
             "tag": inbound["tag"],
@@ -60,17 +60,17 @@ def inbound_summaries(template):
     return result
 
 
-def outbound_tags(template):
+def outbound_tags(config):
     """Return the tag strings of every regular outbound (BLOCK excluded).
 
     Why BLOCK is excluded: it is a system catch-all, not a real exit node;
     the allocator must not generate a regexp:.*@BLOCK$ rule for it.
     """
-    return [o["tag"] for o in template["outbounds"] if o["tag"] != "BLOCK"]
+    return [o["tag"] for o in config["outbounds"] if o["tag"] != "BLOCK"]
 
 
-def outbound_summaries(template):
-    """Extract {tag, protocol} from every outbound in the template.
+def outbound_summaries(config):
+    """Extract {tag, protocol} from every outbound in the config.
 
     Why this exists: the allocator needs just the tag strings, but the
     API endpoint also exposes the protocol so the frontend can show
@@ -78,11 +78,11 @@ def outbound_summaries(template):
     """
     return [
         {"tag": outbound["tag"], "protocol": outbound["protocol"]}
-        for outbound in template["outbounds"]
+        for outbound in config["outbounds"]
     ]
 
 
-def clients_and_rules(users, template):
+def clients_and_rules(users, config):
     """Run the allocator; return (clients_by_inbound, routing_rules, warnings).
 
     Why the BLOCK catch-all is appended here and not inside the allocator:
@@ -91,18 +91,18 @@ def clients_and_rules(users, template):
     no per-outbound rule. BLOCK is guaranteed to exist by the time this
     runs (build_config auto-injects it if absent), so there is no else.
     """
-    tags = outbound_tags(template)
+    tags = outbound_tags(config)
     clients, rules, warnings = allocator.allocate(
-        user_permissions(users), inbound_summaries(template), tags, uuids_map(users)
+        user_permissions(users), inbound_summaries(config), tags, uuids_map(users)
     )
     rules.append({"outboundTag": "BLOCK"})
     return clients, rules, warnings
 
 
-def build_config(template, users):
-    """Return a deep copy of the template with clients and routing filled in.
+def build_config(config, users):
+    """Return a deep copy of the config with clients and routing filled in.
 
-    Why a deep copy: the caller's template dict must stay untouched — it is
+    Why a deep copy: the caller's config dict must stay untouched — it is
     re-read from disk on every sync, and mutating it would leak filled
     state into the opaque parts we promise to preserve.
 
@@ -116,19 +116,19 @@ def build_config(template, users):
     outbound; requiring the user to add one manually is a papercut. The
     panel injects a blackhole BLOCK outbound when none exists.
     """
-    config = copy.deepcopy(template)
+    runtime = copy.deepcopy(config)
     block_exists = any(
-        o.get("tag") == "BLOCK" for o in config.get("outbounds", [])
+        o.get("tag") == "BLOCK" for o in runtime.get("outbounds", [])
     )
     if not block_exists:
-        config.setdefault("outbounds", []).append(
+        runtime.setdefault("outbounds", []).append(
             {"tag": "BLOCK", "protocol": "blackhole"}
         )
-    clients, rules, warnings = clients_and_rules(users, config)
-    for inbound in config["inbounds"]:
+    clients, rules, warnings = clients_and_rules(users, runtime)
+    for inbound in runtime["inbounds"]:
         if inbound["protocol"] != "vless":
             continue
         inbound["settings"]["clients"] = clients.get(inbound["tag"], [])
-    routing = config.setdefault("routing", {})
+    routing = runtime.setdefault("routing", {})
     routing["rules"] = routing.get("rules", []) + rules
-    return config, warnings
+    return runtime, warnings

@@ -69,24 +69,24 @@ def delete_user(username: str, conn=Depends(get_db)):
 def get_user_links(username: str, conn=Depends(get_db)):
     """Return VLESS share links for one user.
 
-    Why this is read-only: links are a view over the existing template and
+    Why this is read-only: links are a view over the existing config and
     user records; generating them must not restart Xray or touch the DB.
     """
     user = db.get_user(conn, username)
     if user is None:
         raise HTTPException(status_code=404, detail="user not found")
 
-    template = xray_service.load_template()
-    if template is None:
-        raise HTTPException(status_code=503, detail="template not loaded")
+    config = xray_service.load_config()
+    if config is None:
+        raise HTTPException(status_code=503, detail="config not loaded")
 
-    if not share_service.has_usable_address(template, settings.SERVER_ADDRESS):
+    if not share_service.has_usable_address(config, settings.SERVER_ADDRESS):
         raise HTTPException(
             status_code=409,
             detail="server address not configured (set LESSERV_SERVER_ADDRESS)",
         )
 
     links, warnings = share_service.links_for_user(
-        user, template, settings.SERVER_ADDRESS
+        user, config, settings.SERVER_ADDRESS
     )
     return {"username": username, "links": links, "warnings": warnings}

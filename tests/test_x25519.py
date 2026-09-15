@@ -37,8 +37,8 @@ class TestX25519(unittest.TestCase):
 
         self._assert_base64url_equals_hex(public_key_from_raw(private_key), expected_hex)
 
-    def test_template_private_key_yields_expected_public_key(self):
-        """Cross-check with Node/OpenSSL for the project's template key."""
+    def test_config_private_key_yields_expected_public_key(self):
+        """Cross-check with Node/OpenSSL for the project's config key."""
         private_key = "sMS4KcvOCag9dZsYPa3sFfVLSn3IGNEI34B7ENhGBFE"
         expected_public = "w_OZ1uUriCcd12KatYIFBJulAFDGNp9V1wL_XiQBt08"
 

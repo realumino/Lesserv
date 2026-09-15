@@ -8,7 +8,7 @@ export default function StatusBar({ status }) {
   return (
     <header className="flex flex-wrap items-center gap-4 bg-apple-card rounded-2xl px-5 py-3 text-sm shadow-sm border border-apple-border">
       <h1 className="text-lg font-bold tracking-tight text-apple-text">Lesserv</h1>
-      <Badge ok={status?.template_loaded} label="Template" />
+      <Badge ok={status?.config_loaded} label="Config" />
       <Badge ok={status?.xray_running} label="Xray" />
       {status?.xray_pid != null && (
         <span className="text-apple-muted">PID {status.xray_pid}</span>

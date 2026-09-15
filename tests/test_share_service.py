@@ -11,10 +11,10 @@ from backend.services import share_service
 
 
 class TestShareService(unittest.TestCase):
-    """Build VLESS URIs from users and the Xray template."""
+    """Build VLESS URIs from users and the Xray config."""
 
-    def _template(self):
-        """Return a template that exercises raw/reality, xhttp, and ws."""
+    def _config(self):
+        """Return a config that exercises raw/reality, xhttp, and ws."""
         return {
             "inbounds": [
                 {
@@ -82,7 +82,7 @@ class TestShareService(unittest.TestCase):
     def test_raw_reality_link(self):
         """REALITY inbound produces a correctly ordered vless:// URI."""
         links, warnings = share_service.links_for_user(
-            self._user(["REALITY_IN"]), self._template(), "example.com"
+            self._user(["REALITY_IN"]), self._config(), "example.com"
         )
 
         self.assertEqual(len(links), 1)
@@ -102,7 +102,7 @@ class TestShareService(unittest.TestCase):
     def test_xhttp_link(self):
         """XHTTP inbound uses address fallback, path, host, and mode."""
         links, warnings = share_service.links_for_user(
-            self._user(["XHTTP_IN"]), self._template(), ""
+            self._user(["XHTTP_IN"]), self._config(), ""
         )
 
         self.assertEqual(len(links), 1)
@@ -117,7 +117,7 @@ class TestShareService(unittest.TestCase):
         """HTTP inbound is skipped with a warning."""
         links, warnings = share_service.links_for_user(
             self._user(["REALITY_IN", "HTTP_ONLY"]),
-            self._template(),
+            self._config(),
             "example.com",
         )
         tags = [link["inbound"] for link in links]
@@ -126,11 +126,11 @@ class TestShareService(unittest.TestCase):
         self.assertIn("skipping non-vless inbound 'HTTP_ONLY'", warnings)
 
     def test_unknown_outbound_warns(self):
-        """An allowed outbound not in the template is skipped."""
+        """An allowed outbound not in the config is skipped."""
         user = self._user(["REALITY_IN"])
         user["allowed_outbounds"] = ["NOWHERE"]
         links, warnings = share_service.links_for_user(
-            user, self._template(), "example.com"
+            user, self._config(), "example.com"
         )
 
         self.assertEqual(links, [])
@@ -141,7 +141,7 @@ class TestShareService(unittest.TestCase):
         user = self._user(["REALITY_IN"])
         user["status"] = "disabled"
         links, warnings = share_service.links_for_user(
-            user, self._template(), "example.com"
+            user, self._config(), "example.com"
         )
 
         self.assertTrue(links)
@@ -150,7 +150,7 @@ class TestShareService(unittest.TestCase):
     def test_wildcard_listen_ignored_when_no_configured_address(self):
         """0.0.0.0 and :: listens do not provide a usable address."""
         links, warnings = share_service.links_for_user(
-            self._user(), self._template(), ""
+            self._user(), self._config(), ""
         )
         tags = [link["inbound"] for link in links]
 
@@ -161,22 +161,22 @@ class TestShareService(unittest.TestCase):
     def test_has_usable_address(self):
         """Detect when at least one inbound has a real listen address."""
         self.assertTrue(
-            share_service.has_usable_address(self._template(), "example.com")
+            share_service.has_usable_address(self._config(), "example.com")
         )
         # With no configured address, XHTTP_IN's real IP is still usable.
-        self.assertTrue(share_service.has_usable_address(self._template(), ""))
+        self.assertTrue(share_service.has_usable_address(self._config(), ""))
 
-        template = {"inbounds": [{"tag": "ONLY", "listen": "0.0.0.0"}]}
-        self.assertFalse(share_service.has_usable_address(template, ""))
+        config = {"inbounds": [{"tag": "ONLY", "listen": "0.0.0.0"}]}
+        self.assertFalse(share_service.has_usable_address(config, ""))
 
 
 class TestShareRouter(unittest.TestCase):
     """GET /api/users/{username}/links endpoint."""
 
-    @mock.patch("backend.routers.users.xray_service.load_template")
+    @mock.patch("backend.routers.users.xray_service.load_config")
     @mock.patch("backend.routers.users.settings.SERVER_ADDRESS", "example.com")
     @mock.patch("backend.routers.users.db.get_user")
-    def test_returns_links(self, mock_get_user, mock_load_template):
+    def test_returns_links(self, mock_get_user, mock_load_config):
         mock_get_user.return_value = {
             "username": "alice",
             "status": "active",
@@ -184,7 +184,7 @@ class TestShareRouter(unittest.TestCase):
             "allowed_outbounds": ["JAPAN"],
             "uuids": {"alice@JAPAN": "11111111-1111-1111-1111-111111111111"},
         }
-        mock_load_template.return_value = {
+        mock_load_config.return_value = {
             "inbounds": [
                 {
                     "tag": "REALITY_IN",
@@ -222,11 +222,11 @@ class TestShareRouter(unittest.TestCase):
             get_user_links("ghost", conn=mock.MagicMock())
         self.assertEqual(ctx.exception.status_code, 404)
 
-    @mock.patch("backend.routers.users.xray_service.load_template")
+    @mock.patch("backend.routers.users.xray_service.load_config")
     @mock.patch("backend.routers.users.db.get_user")
-    def test_503_when_template_missing(self, mock_get_user, mock_load_template):
+    def test_503_when_config_missing(self, mock_get_user, mock_load_config):
         mock_get_user.return_value = {"username": "alice"}
-        mock_load_template.return_value = None
+        mock_load_config.return_value = None
         from backend.routers.users import get_user_links
         from fastapi import HTTPException
 
@@ -234,12 +234,12 @@ class TestShareRouter(unittest.TestCase):
             get_user_links("alice", conn=mock.MagicMock())
         self.assertEqual(ctx.exception.status_code, 503)
 
-    @mock.patch("backend.routers.users.xray_service.load_template")
+    @mock.patch("backend.routers.users.xray_service.load_config")
     @mock.patch("backend.routers.users.settings.SERVER_ADDRESS", "")
     @mock.patch("backend.routers.users.db.get_user")
-    def test_409_when_address_missing(self, mock_get_user, mock_load_template):
+    def test_409_when_address_missing(self, mock_get_user, mock_load_config):
         mock_get_user.return_value = {"username": "alice"}
-        mock_load_template.return_value = {
+        mock_load_config.return_value = {
             "inbounds": [
                 {"tag": "IN", "protocol": "vless", "listen": "0.0.0.0", "port": 443}
             ],

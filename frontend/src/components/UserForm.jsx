@@ -152,7 +152,7 @@ function CheckboxGrid({ label, options, checked, onToggle }) {
   return (
     <Field label={label}>
       {options.length === 0 ? (
-        <p className="text-xs text-apple-muted">None available (template not loaded?)</p>
+        <p className="text-xs text-apple-muted">None available (config not loaded?)</p>
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {options.map((opt) => (

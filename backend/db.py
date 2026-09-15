@@ -63,7 +63,7 @@ def seed(conn):
     never duplicates the row and never errors.
 
     Why these specific tags: they mirror the REALITY/XHTTP inbound and
-    OUTBOUND/BLOCK outbound layout of a typical template, so the demo
+    OUTBOUND/BLOCK outbound layout of a typical config, so the demo
     user's client actually matches a routing rule instead of falling
     into the BLOCK catch-all.
     """
