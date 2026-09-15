@@ -4,7 +4,7 @@
  * Why a dumb component: data ownership stays in App, so a refresh after
  * create/edit/delete automatically re-renders this table.
  */
-export default function UserTable({ users, error, onAdd, onEdit, onDelete }) {
+export default function UserTable({ users, error, onAdd, onEdit, onShare, onDelete }) {
   if (error) {
     return <p className="text-apple-red text-sm">Failed to load users: {error}</p>
   }
@@ -54,6 +54,12 @@ export default function UserTable({ users, error, onAdd, onEdit, onDelete }) {
                       className="text-apple-blue hover:text-apple-blue-hover font-medium mr-4 transition-colors"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={() => onShare(u)}
+                      className="text-apple-green hover:opacity-80 font-medium mr-4 transition-opacity"
+                    >
+                      Share
                     </button>
                     <button
                       onClick={() => onDelete(u.username)}

@@ -4,6 +4,7 @@ import StatusBar from './components/StatusBar'
 import UserTable from './components/UserTable'
 import UserForm from './components/UserForm'
 import ConfigPage from './components/ConfigPage'
+import ShareModal from './components/ShareModal'
 
 /**
  * Root component: owns all shared state (users, status, template metadata)
@@ -21,6 +22,7 @@ export default function App() {
   const [status, setStatus] = useState(null)
   // undefined = form closed, null = create mode, object = edit mode
   const [formTarget, setFormTarget] = useState(undefined)
+  const [shareTarget, setShareTarget] = useState(undefined)
   const [notice, setNotice] = useState(null)
 
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function App() {
           error={usersError}
           onAdd={() => setFormTarget(null)}
           onEdit={setFormTarget}
+          onShare={setShareTarget}
           onDelete={onDelete}
         />
       ) : (
@@ -79,6 +82,12 @@ export default function App() {
           outbounds={outbounds}
           onClose={() => setFormTarget(undefined)}
           onSaved={onSaved}
+        />
+      )}
+      {shareTarget !== undefined && (
+        <ShareModal
+          user={shareTarget}
+          onClose={() => setShareTarget(undefined)}
         />
       )}
     </div>

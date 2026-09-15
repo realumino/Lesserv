@@ -15,7 +15,7 @@ two places in the template:
 
 Nothing else is ever generated, validated, or interpreted.
 
-## Current status: Milestone 4 done, Milestone 5 next
+## Current status: Milestone 5 done, next milestone TBD
 
 | # | What | Status |
 |---|------|--------|
@@ -24,5 +24,5 @@ Nothing else is ever generated, validated, or interpreted.
 | 2 | Fill template's `routing.rules` + VLESS `clients` from DB users; run/restart Xray subprocess | done |
 | 3 | Endpoints: GET /api/inbounds, /api/outbounds (tags read from template), GET /api/status, POST /api/config (replace template) | done |
 | 4 | React frontend (Vite, plain JS, Tailwind CDN): status bar, user table, add/edit modal with inbound/outbound checkboxes, config tab showing template + generated config; + GET /api/config, GET /api/config/generated | done |
-| 5 | Share links (vless:// URIs) — optional stretch | NEXT |
+| 5 | Share links (vless:// URIs): per-user links, copy/QR, REALITY public key derivation | done |
 | later | Xray gRPC stats API, auth, expiry/quota jobs, Docker | deferred |

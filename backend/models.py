@@ -70,3 +70,20 @@ class UserOut(BaseModel):
     uuids: dict[str, str]
     note: str | None
     created_at: int
+
+
+class ShareLink(BaseModel):
+    """One generated VLESS share link."""
+
+    inbound: str
+    outbound: str
+    email: str
+    uri: str
+
+
+class UserLinksOut(BaseModel):
+    """Response for GET /api/users/{username}/links."""
+
+    username: str
+    links: list[ShareLink]
+    warnings: list[str]

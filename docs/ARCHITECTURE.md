@@ -22,12 +22,13 @@ differently from other panels:
   same server — per-user exit selection, without writing a routing rule per
   user.
 
-**Current state (after milestone 4):** the panel stores users in SQLite,
+**Current state (after milestone 5):** the panel stores users in SQLite,
 serves a REST API for user CRUD, after every user change regenerates the
 Xray config and restarts Xray, exposes endpoints for the template
-structure (inbounds/outbounds tags), system health, and template
-read/replace — and ships a React SPA (Vite, plain JS) that consumes all
-of it: status bar, user table, add/edit modal, config tab.
+structure (inbounds/outbounds tags), system health, template
+read/replace, and per-user VLESS share links — and ships a React SPA
+(Vite, plain JS) that consumes all of it: status bar, user table,
+add/edit modal, config tab, and a share-links modal with copy/QR.
 
 ## The layers
 
@@ -154,6 +155,7 @@ name, this file is where to look.
 | GET | /api/users/{username} | 200 | 404 |
 | PUT | /api/users/{username} | 200 (partial update) | 404 |
 | DELETE | /api/users/{username} | 204 | 404 |
+| GET | /api/users/{username}/links | 200 share links | 404 unknown user, 503 no template, 409 no server address |
 
 Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
 
@@ -303,6 +305,42 @@ The process handle is module-level (not `app.state`) because user_service
 has no access to the app object, and a `threading.Lock` guards
 start/stop because sync runs in FastAPI's worker threads.
 
+### backend/services/share_service.py — turning users into share links
+
+Pure transformer: it takes a user, the loaded template, and the
+configured server address and returns `vless://` URIs plus warnings.
+No files, no SQLite, no subprocess.
+
+- `resolve_address(configured, inbound)` — picks the server address for
+  an inbound. The configured `LESSERV_SERVER_ADDRESS` wins; otherwise it
+  falls back to the inbound's `listen` unless that is a wildcard
+  (`0.0.0.0` or `::`).
+- `has_usable_address(template, configured)` — returns True when at
+  least one inbound can produce a resolvable address, so the router can
+  answer 409 before wasting time building links.
+- `_transport_params(inbound)` / `_security_params(inbound)` — extract
+  the transport (type, path, host, mode, serviceName) and security
+  (tls/reality sni, fp, pbk, sid, spx) query parameters from the
+  inbound's `streamSettings`.
+- `links_for_user(user, template, configured_address)` — produces one
+  `{inbound, outbound, email, uri}` entry per allowed
+  `(inbound, outbound)` pair. Skips non-VLESS inbounds, unknown tags,
+  missing ports, and missing addresses with warnings. Disabled users
+  still get links with a warning so the admin sees what would be shared.
+
+Why the public key is derived here: REALITY links need the server's
+public key (`pbk`), but the template only stores the private key.
+`share_service` calls `backend.core.x25519.derive_public_key`, a pure-
+Python RFC 7748 Montgomery ladder, so no new dependency is required.
+
+### backend/core/x25519.py — pure-Python X25519 public-key derivation
+
+A small, dependency-free curve25519 implementation used only to derive
+REALITY public keys from the template's `privateKey`. It clamps the
+scalar and runs the Montgomery ladder over `2**255 - 19`, validating
+itself against RFC 7748 §6.1 test vectors and a cross-implementation
+check for the project's template key.
+
 ### backend/core/allocator.py — the copied allocation brain
 
 A verbatim copy of `vless_allocator.py` from the sibling repo
@@ -316,14 +354,16 @@ rule) lives in config_service, never here.
 
 ### backend/settings.py — paths the operator can override
 
-Three module-level constants read from environment variables with
-repo-root defaults:
+Module-level constants read from environment variables with repo-root
+defaults:
 
 | setting | default | meaning |
-|---|---|---|
+|---|---|---|---|
 | `TEMPLATE_PATH` | `config/xray_template.json` | user-provided semi-complete config |
 | `XRAY_CONFIG_PATH` | `data/xray_config.json` | filled config the panel writes |
 | `XRAY_BINARY` | `xray` | executable name or absolute path |
+| `SERVER_ADDRESS` | `""` | public server domain/IP used in share links |
+
 
 The template lives in `config/`, a git-tracked folder whose `.gitignore`
 excludes everything — the admin drops their file there and it is never
@@ -390,6 +430,10 @@ to the backend by absolute URL: `vite.config.js` proxies `/api/*` to
   client-side, and POSTs it; a Refresh button and the post-save path both
   re-fetch the panes instead of trusting local state. The template stays
   opaque here too: the page checks syntax, never structure.
+- `src/components/ShareModal.jsx` — per-user share-link modal. Fetches
+  `GET /api/users/{username}/links`, lists each inbound/outbound pair
+  with the full `vless://` URI, a Copy button, and a QR toggle that
+  renders the URI via `qrcode.react`.
 
 ### tests/ — locking behavior down
 
@@ -415,6 +459,13 @@ All tests use stdlib `unittest` (no extra deps).
   with mocked dependencies (503 on missing template, correct
   summaries/tags, composite status response, template read 200/404,
   generated-config envelope 200/404, config write-and-sync flow).
+- `tests/test_x25519.py` — validates the pure-Python X25519
+  implementation against RFC 7748 §6.1 test vectors and a cross-
+  implementation check for the project's template private key.
+- `tests/test_share_service.py` — tests URI generation for raw/reality,
+  xhttp, and ws transports; address resolution/fallback; wildcard
+  listen handling; and the `GET /api/users/{username}/links` router
+  endpoint (404/409/503/200 cases).
 
 ## Life of one request: POST /api/users
 
