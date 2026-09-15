@@ -108,8 +108,16 @@ def _transport_params(inbound):
     return params, warnings
 
 
-def _security_params(inbound):
-    """Build security query params and any warnings for an inbound."""
+def _security_params(inbound, reality_keys=None):
+    """Build security query params and any warnings for an inbound.
+
+    Why the private key comes from `reality_keys` when available: the
+    panel owns realitySettings.privateKey (stored in SQLite, injected at
+    sync), so the config file's copy may be stale or a placeholder.
+    Deriving `pbk` from the panel's key is what makes links match what
+    Xray actually serves. The config value remains the fallback so pure
+    callers without a database still work.
+    """
     stream = inbound.get("streamSettings") or {}
     security = stream.get("security", "none")
     params = {}
@@ -130,7 +138,10 @@ def _security_params(inbound):
         fp = settings.get("fingerprint") or reality.get("fingerprint")
         params["fp"] = fp or "chrome"
 
-        private_key = reality.get("privateKey")
+        private_key = (
+            (reality_keys or {}).get(inbound.get("tag"))
+            or reality.get("privateKey")
+        )
         if private_key:
             pbk = derive_public_key(private_key)
             if pbk:
@@ -190,12 +201,16 @@ def _build_uri(email, uuid, address, port, params, inbound_tag):
     return f"vless://{uuid}@{host}:{port}?{query}#{quote(remark, safe='')}"
 
 
-def links_for_user(user, config, configured_address):
+def links_for_user(user, config, configured_address, reality_keys=None):
     """Return all share links for a user plus warnings.
 
     Why one link per (inbound, outbound) pair: the UUID differs per
     outbound email, so a single user has a distinct URI for each exit
     node they are allowed to use.
+
+    Why reality_keys is optional: the router always passes the DB map;
+    the default keeps this function usable without a database (tests,
+    ad-hoc scripts) with links derived from the config's own keys.
     """
     username = user["username"]
     warnings = []
@@ -239,7 +254,7 @@ def links_for_user(user, config, configured_address):
                 continue
 
             transport, t_warnings = _transport_params(inbound)
-            security, s_warnings = _security_params(inbound)
+            security, s_warnings = _security_params(inbound, reality_keys)
             warnings.extend(t_warnings)
             warnings.extend(s_warnings)
 

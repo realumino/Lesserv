@@ -10,6 +10,7 @@ clever abstractions, just the standard curve25519 scalar multiplication.
 """
 
 import base64
+import os
 
 _P = 2**255 - 19
 _A24 = 121665
@@ -102,6 +103,26 @@ def public_key_from_raw(raw: bytes) -> str:
     public = _scalar_mult(scalar, _BASE_POINT)
     public_bytes = public.to_bytes(32, "little")
     return base64.urlsafe_b64encode(public_bytes).decode().rstrip("=")
+
+
+def generate_private_key() -> str:
+    """Generate a fresh X25519 private key in Xray's base64url format.
+
+    Why os.urandom + clamping: RFC 7748 requires the scalar to be clamped
+    (bits cleared/set), which is exactly what `xray x25519` does before
+    printing the key. Clamping via `_clamp` (idempotent) reuses the same
+    code path that decodes keys, so a generated key round-trips through
+    `derive_public_key` by construction.
+
+    Why base64url unpadded: Xray renders REALITY keys as standard
+    base64 with URL-safe alphabet and stripped padding; matching that
+    byte-for-byte keeps the key valid if the operator ever copies it
+    into a hand-written config.
+    """
+    raw = os.urandom(32)
+    scalar = _clamp(raw)
+    clamped = scalar.to_bytes(32, "little")
+    return base64.urlsafe_b64encode(clamped).decode().rstrip("=")
 
 
 def derive_public_key(private_key: str) -> str | None:

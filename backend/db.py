@@ -53,6 +53,15 @@ def init_schema(conn):
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reality_keys (
+            inbound_tag TEXT PRIMARY KEY,
+            private_key TEXT NOT NULL,
+            created_at  INTEGER NOT NULL
+        )
+        """
+    )
     conn.commit()
 
 
@@ -156,6 +165,39 @@ def replace_user(conn, user):
             user["created_at"],
             user["username"],
         ),
+    )
+    conn.commit()
+
+
+def list_reality_keys(conn):
+    """Return every stored REALITY key as {inbound_tag: {private_key, created_at}}.
+
+    Why keyed by tag: an inbound's tag is its identity in an Xray config,
+    so the key follows the tag — removing and re-adding an inbound with
+    the same tag reuses its key instead of breaking existing clients.
+    """
+    rows = conn.execute(
+        "SELECT inbound_tag, private_key, created_at FROM reality_keys"
+    ).fetchall()
+    return {row["inbound_tag"]: dict(row) for row in rows}
+
+
+def upsert_reality_key(conn, inbound_tag, private_key, created_at):
+    """Insert or overwrite the key of one REALITY inbound and commit.
+
+    Why an upsert: generation (first key for a tag) and rotation (fresh
+    key for an existing tag) are the same storage operation — replace
+    whatever is stored with the given key and timestamp.
+    """
+    conn.execute(
+        """
+        INSERT INTO reality_keys (inbound_tag, private_key, created_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(inbound_tag) DO UPDATE SET
+            private_key = excluded.private_key,
+            created_at = excluded.created_at
+        """,
+        (inbound_tag, private_key, created_at),
     )
     conn.commit()
 

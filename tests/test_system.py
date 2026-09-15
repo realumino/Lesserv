@@ -260,5 +260,76 @@ class TestSystemRouter(unittest.TestCase):
         self.assertEqual(result, {"message": "config updated"})
 
 
+class TestSync(unittest.TestCase):
+    """The full sync wiring: keys generated, injected, runtime written."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        patchers = [
+            mock.patch("backend.services.xray_service.settings.CONFIG_PATH",
+                       os.path.join(self.tmpdir, "config.json")),
+            mock.patch("backend.services.xray_service.settings.RUNTIME_CONFIG_PATH",
+                       os.path.join(self.tmpdir, "runtime.json")),
+            mock.patch("backend.services.xray_service.restart"),  # no subprocess
+        ]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _reality_config(self):
+        return {
+            "inbounds": [
+                {
+                    "tag": "REALITY",
+                    "protocol": "vless",
+                    "settings": {"clients": []},
+                    "streamSettings": {
+                        "security": "reality",
+                        "realitySettings": {"privateKey": "operator-key"},
+                    },
+                }
+            ],
+            "outbounds": [],
+        }
+
+    def test_sync_generates_key_and_overwrites_private_key_in_runtime(self):
+        from backend import db
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = db.connect(db_path)
+        db.init_schema(conn)
+        self.addCleanup(conn.close)
+
+        xray_service.save_config(self._reality_config())
+        xray_service.sync(conn)
+
+        runtime = xray_service.load_runtime_config()
+        stored = db.list_reality_keys(conn)["REALITY"]["private_key"]
+        self.assertEqual(
+            runtime["inbounds"][0]["streamSettings"]["realitySettings"]["privateKey"],
+            stored,
+        )
+        # the operator's own config file stays untouched (DB is source of truth)
+        self.assertEqual(
+            xray_service.load_config()["inbounds"][0]["streamSettings"]["realitySettings"]["privateKey"],
+            "operator-key",
+        )
+
+    def test_sync_skips_when_no_config(self):
+        from backend import db
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = db.connect(db_path)
+        db.init_schema(conn)
+        self.addCleanup(conn.close)
+
+        xray_service.sync(conn)  # must not raise or write anything
+
+        self.assertIsNone(xray_service.load_runtime_config())
+        self.assertEqual(db.list_reality_keys(conn), {})
+
+
 if __name__ == "__main__":
     unittest.main()

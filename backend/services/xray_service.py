@@ -21,7 +21,7 @@ import subprocess
 import threading
 
 from backend import db, settings
-from backend.services import config_service
+from backend.services import config_service, reality_service
 
 logger = logging.getLogger(__name__)
 
@@ -203,17 +203,24 @@ def sync(conn):
     change and main calls it once at startup. Malformed configs raise
     KeyError/TypeError here, which are logged as warnings — a user edit
     must never take the API down.
+
+    Why ensure_keys runs before build_config: the panel owns
+    realitySettings.privateKey, so every config that arrives here (new
+    file, POST, or startup) first gets its REALITY keys generated/stored,
+    then the runtime copy gets them injected. The operator's config file
+    itself is never touched — the DB is the source of truth.
     """
     config = load_config()
     if config is None:
         return
+    keys = reality_service.ensure_keys(conn, config)
     users = db.list_users(conn)
     try:
         runtime, warnings = config_service.build_config(config, users)
     except (KeyError, TypeError) as error:
         logger.warning("config looks malformed (%s); skipping sync", error)
         return
-    for warning in warnings:
+    for warning in warnings + config_service.apply_reality_keys(runtime, keys):
         logger.warning("sync: %s", warning)
     write_runtime_config(runtime)
     restart()

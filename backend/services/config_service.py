@@ -82,6 +82,53 @@ def outbound_summaries(config):
     ]
 
 
+def reality_inbound_tags(config):
+    """Return the tags of every inbound that has streamSettings.realitySettings.
+
+    Why presence of realitySettings decides (not security == "reality"): a
+    missing or misspelled security value must not silently skip the
+    private key — the panel owns that field whenever the settings block
+    exists. Protocol-agnostic on purpose: REALITY belongs to VLESS in
+    practice, but keying off the settings block keeps this simple and
+    covers any future reality-capable inbound.
+    """
+    tags = []
+    for inbound in config["inbounds"]:
+        stream = inbound.get("streamSettings") or {}
+        if isinstance(stream.get("realitySettings"), dict):
+            tags.append(inbound["tag"])
+    return tags
+
+
+def apply_reality_keys(runtime, keys):
+    """Overwrite realitySettings.privateKey of every REALITY inbound; return warnings.
+
+    Why a separate pure step instead of part of build_config: build_config
+    keeps its original signature (and its tests); the private-key fill is
+    a distinct panel-owned concern that the caller composes in. `runtime`
+    must be the deep copy made by build_config — mutating the caller's
+    config dict would break the opaque-preservation promise.
+
+    Why a missing key only warns: `ensure_keys` guarantees one key per
+    reality inbound, so a gap here is a bug, not an operator error — but
+    keeping the config's own value beats crashing or writing an empty key.
+    """
+    warnings = []
+    for inbound in runtime["inbounds"]:
+        stream = inbound.get("streamSettings") or {}
+        reality = stream.get("realitySettings")
+        if not isinstance(reality, dict):
+            continue
+        if inbound["tag"] not in keys:
+            warnings.append(
+                f"no generated REALITY key for inbound '{inbound['tag']}';"
+                " keeping the config's own value"
+            )
+            continue
+        reality["privateKey"] = keys[inbound["tag"]]
+    return warnings
+
+
 def clients_and_rules(users, config):
     """Run the allocator; return (clients_by_inbound, routing_rules, warnings).
 

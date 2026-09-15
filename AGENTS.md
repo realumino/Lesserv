@@ -26,15 +26,23 @@ wrong documentation is worse than none.
 - Backend: FastAPI + plain `sqlite3` (no ORM). JSON columns for
   allowed_inbounds / allowed_outbounds / uuids.
 - v1 user sync = regenerate full runtime config + restart Xray. No Xray gRPC API in v1 (deferred).
-- The user's Xray config is opaque: the panel only FILLS routing.rules
-  and VLESS inbounds' settings.clients. Never generate, validate, or
-  interpret the rest of it.
+- The user's Xray config is opaque EXCEPT three panel-owned places the
+  panel FILLS: routing.rules, VLESS inbounds' settings.clients, and
+  every inbound's streamSettings.realitySettings.privateKey (panel-
+  generated X25519 key, stored in SQLite — the config file's value is
+  ignored). Never generate, validate, or interpret anything else.
 - Only VLESS. UUID per (user, outbound) pair, stable across changes.
+  REALITY keys are per inbound tag, stable across syncs, changed only
+  by explicit rotation.
 - No auth in v1.
-- File map: backend/main.py (app + lifespan), backend/db.py (all SQLite),
+- File map: backend/main.py (app + lifespan), backend/db.py (all SQLite:
+  users + reality_keys tables),
   backend/services/* (business logic: user_service, config_service,
-  xray_service), backend/core/allocator.py (copy of vless_allocator from
-  sibling repo xray_multi_inout_generator), backend/settings.py
+  reality_service, xray_service, share_service), backend/routers/*
+  (users, system, reality), backend/core/allocator.py (copy of
+  vless_allocator from sibling repo xray_multi_inout_generator),
+  backend/core/x25519.py (pure X25519 derive/generate, no deps),
+  backend/settings.py
   (env-overridable: config path, runtime config path, Xray binary,
   server address for share links). The user-provided config goes in
   config/ (gitignored dir, user-provided); the generated runtime config

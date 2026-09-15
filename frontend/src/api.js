@@ -41,3 +41,8 @@ export const postConfig = (body) =>
   request('/config', { method: 'POST', body: JSON.stringify(body) })
 export const fetchUserLinks = (username) =>
   request(`/users/${encodeURIComponent(username)}/links`)
+export const fetchRealityKeys = () => request('/reality')
+export const rotateRealityKey = (tag) =>
+  request(`/reality/${encodeURIComponent(tag)}/rotate`, { method: 'POST' })
+export const rotateAllRealityKeys = () =>
+  request('/reality/rotate', { method: 'POST' })

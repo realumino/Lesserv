@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend import db, settings
 from backend.models import UserCreate, UserLinksOut, UserOut, UserUpdate
-from backend.services import share_service, user_service, xray_service
+from backend.services import reality_service, share_service, user_service, xray_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -87,6 +87,6 @@ def get_user_links(username: str, conn=Depends(get_db)):
         )
 
     links, warnings = share_service.links_for_user(
-        user, config, settings.SERVER_ADDRESS
+        user, config, settings.SERVER_ADDRESS, reality_service.key_map(conn)
     )
     return {"username": username, "links": links, "warnings": warnings}

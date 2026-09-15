@@ -12,16 +12,23 @@ replacing two places in it:
 
 1. `routing.rules` — one rule per outbound: `regexp:.*@TAG$` -> that outbound
 2. `settings.clients` of each VLESS inbound — entries `{id, email}`
+3. `streamSettings.realitySettings.privateKey` of every inbound that has a
+   `realitySettings` block — always replaced with the panel-generated X25519
+   key stored in `data/panel.db` (table `reality_keys`), whether the config
+   carries one or not. Rotation happens only via the API.
 
 Nothing else is ever generated, validated, or interpreted. The filled
 result the panel writes is called the "runtime config".
 
-## Current status: minor improvements stage (no specific milestone)
+## Current status: milestone 6 — REALITY key management (done)
 
-Milestones 0–5 are done; there is no active milestone now. Work happens as
-small, self-contained improvements with no shared purpose — naming, UI
-polish, cleanups. Latest: share-link generation now reads `flow` from
-an inbound's `settings.flow` and appends it as a `flow=` query param.
+Milestones 0–5 are done. Latest: REALITY key management — the panel now
+owns `realitySettings.privateKey`: every sync generates an X25519 key per
+REALITY inbound (stored in the new `reality_keys` SQLite table), injects
+it into the runtime config, and share links derive `pbk` from that stored
+key. New endpoints `GET /api/reality`, `POST /api/reality/{tag}/rotate`,
+`POST /api/reality/rotate`; the Config tab shows each inbound's public key
+with Rotate buttons.
 
 | # | What | Status |
 |---|------|--------|
@@ -32,4 +39,5 @@ an inbound's `settings.flow` and appends it as a `flow=` query param.
 | 4 | React frontend (Vite, plain JS, Tailwind CDN): status bar, user table, add/edit modal with inbound/outbound checkboxes, config tab showing config + runtime config; + GET /api/config, GET /api/config/runtime | done |
 | 5 | Share links (vless:// URIs): per-user links, copy/QR, REALITY public key derivation | done |
 | — | Minor improvements, no fixed scope (template→config / generated→runtime config rename) | done |
+| 6 | REALITY key management: auto-generated per-inbound X25519 keys in SQLite, injected at sync; share links use the stored key; rotate endpoints + Config-tab UI | done |
 | later | Xray gRPC stats API, auth, expiry/quota jobs, Docker | deferred |

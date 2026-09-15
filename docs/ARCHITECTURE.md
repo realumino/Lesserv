@@ -22,13 +22,15 @@ differently from other panels:
   same server — per-user exit selection, without writing a routing rule per
   user.
 
-**Current state (after milestone 5):** the panel stores users in SQLite,
+**Current state (after milestone 6):** the panel stores users in SQLite,
 serves a REST API for user CRUD, after every user change regenerates the
-runtime Xray config and restarts Xray, exposes endpoints for the config
-structure (inbounds/outbounds tags), system health, config
-read/replace, and per-user VLESS share links — and ships a React SPA
-(Vite, plain JS) that consumes all of it: status bar, user table,
-add/edit modal, config tab, and a share-links modal with copy/QR.
+runtime Xray config and restarts Xray, owns the REALITY private keys
+(generated per inbound, stored in SQLite, rotated via the API), exposes
+endpoints for the config structure (inbounds/outbounds tags), system
+health, config read/replace, per-user VLESS share links, and REALITY key
+listing/rotation — and ships a React SPA (Vite, plain JS) that consumes
+all of it: status bar, user table, add/edit modal, config tab with
+REALITY key rotation, and a share-links modal with copy/QR.
 
 ## The layers
 
@@ -74,9 +76,12 @@ And the pure pieces:
 - `backend/models.py` — pydantic shapes (the API contract), used by every layer.
 - `backend/routers/system.py` — system endpoints: inbounds/outbounds tag lists,
   composite status, and config replacement via POST.
+- `backend/routers/reality.py` — REALITY key endpoints: list and rotate.
 - `backend/core/allocator.py` — the copied `vless_allocator` brain, pure and
   dependency-free. Verbatim copy from the sibling repo; panel policy never
   goes in here.
+- `backend/services/reality_service.py` — generate, store, and rotate the
+  REALITY X25519 keys; see its own section below.
 - `backend/settings.py` — the three paths, overridable via environment
   variables so dev and server runs differ without editing code.
 
@@ -158,6 +163,11 @@ name, this file is where to look.
 | GET | /api/users/{username}/links | 200 share links | 404 unknown user, 503 no config, 409 no server address |
 
 Validation errors are 422 (FastAPI's code for pydantic rejection), not 400.
+
+The links endpoint passes `reality_service.key_map(conn)` into
+`share_service.links_for_user`, so REALITY links derive `pbk` from the
+panel's stored key — never from the config file's (possibly stale)
+`privateKey`.
 
 ### backend/routers/system.py — system info and config management
 
@@ -248,6 +258,15 @@ This is what makes the milestone testable without a running server.
   the allocator) because it is panel policy and the allocator must stay a
   verbatim copy. BLOCK is guaranteed to exist by this point because
   `build_config` auto-injects it.
+- `reality_inbound_tags(config)` — tags of every inbound whose
+  `streamSettings` contains a `realitySettings` dict. Detection is by the
+  settings block, not `security == "reality"`, so a misspelled security
+  value cannot silently skip the private key. Protocol-agnostic on purpose.
+- `apply_reality_keys(runtime, keys)` — overwrites
+  `realitySettings.privateKey` with the panel's stored key for each REALITY
+  inbound in the runtime copy; warns (and keeps the config value) when a
+  key is missing. Kept separate from `build_config` so that function keeps
+  its original signature and tests; `xray_service.sync` composes the two.
 - `build_config(config, users)` — the entry point: `copy.deepcopy`s the
   config, auto-injects a `{"tag": "BLOCK", "protocol": "blackhole"}`
   outbound when none exists, replaces `settings.clients` of every VLESS
@@ -296,11 +315,24 @@ down.
 - `status()` — returns `{"running": bool, "pid": int | None}` by reading
   the module-level `_process` handle. Read-only, no lock, used by
   `GET /api/status` to show process health.
-- `sync(conn)` — the single entry point: load config, list users, build
-  the runtime config, log the allocator warnings, write, restart. Called by
-  `user_service` after every user change and by `main` at startup. A
-  malformed config (missing keys) raises `KeyError`/`TypeError` inside
-  `build_config`; sync catches those, warns, and returns.
+- `sync(conn)` — the single entry point: load config, **ensure every
+  REALITY inbound has a stored key** (`reality_service.ensure_keys` —
+  generates and persists one for missing tags), list users, build the
+  runtime config, **inject the stored keys**
+  (`config_service.apply_reality_keys`), log the allocator and key
+  warnings, write, restart. Called by `user_service` after every user
+  change and by `main` at startup. A malformed config (missing keys)
+  raises `KeyError`/`TypeError` inside `build_config`; sync catches
+  those, warns, and returns.
+
+  Why the operator's config file never gets the generated key: the DB is
+  the source of truth and the config stays opaque; the runtime config
+  (the Config tab's runtime pane) is where the effective value shows.
+
+  Why keys are ensured here and not in the API GET: a config can arrive
+  at any time (startup, POST) and every one of those paths already runs
+  sync — one choke point guarantees a stored key per REALITY inbound
+  before the runtime config is written.
 
 The process handle is module-level (not `app.state`) because user_service
 has no access to the app object, and a `threading.Lock` guards
@@ -319,31 +351,40 @@ No files, no SQLite, no subprocess.
 - `has_usable_address(config, configured)` — returns True when at
   least one inbound can produce a resolvable address, so the router can
   answer 409 before wasting time building links.
-- `_transport_params(inbound)` / `_security_params(inbound)` — extract
-  the transport (type, path, host, mode, serviceName) and security
+- `_transport_params(inbound)` / `_security_params(inbound, reality_keys)` —
+  extract the transport (type, path, host, mode, serviceName) and security
   (tls/reality sni, fp, pbk, sid, spx) query parameters from the
   inbound's `streamSettings`.
 - `_flow_params(inbound)` — adds the `flow` query parameter when the
   inbound sets `settings.flow`. Xray declares flow per inbound, so the
   link echoes it verbatim with no per-case validation.
-- `links_for_user(user, config, configured_address)` — produces one
-  `{inbound, outbound, email, uri}` entry per allowed
+- `links_for_user(user, config, configured_address, reality_keys=None)` —
+  produces one `{inbound, outbound, email, uri}` entry per allowed
   `(inbound, outbound)` pair. Skips non-VLESS inbounds, unknown tags,
   missing ports, and missing addresses with warnings. Disabled users
   still get links with a warning so the admin sees what would be shared.
 
 Why the public key is derived here: REALITY links need the server's
-public key (`pbk`), but the config only stores the private key.
-`share_service` calls `backend.core.x25519.derive_public_key`, a pure-
-Python RFC 7748 Montgomery ladder, so no new dependency is required.
+public key (`pbk`), but the private key is not directly usable.
+Since milestone 6 the panel owns the private key (stored in SQLite), so
+the users router passes the `{tag: private_key}` map from
+`reality_service.key_map(conn)` and `pbk` is derived from **that** key —
+the config file's copy may be stale or a placeholder. The config value
+remains the fallback when no DB key exists (pure callers without a
+database). `share_service` calls `backend.core.x25519.derive_public_key`,
+a pure-Python RFC 7748 Montgomery ladder, so no new dependency is
+required.
 
-### backend/core/x25519.py — pure-Python X25519 public-key derivation
+### backend/core/x25519.py — pure-Python X25519 (derive + generate)
 
-A small, dependency-free curve25519 implementation used only to derive
-REALITY public keys from the config's `privateKey`. It clamps the
-scalar and runs the Montgomery ladder over `2**255 - 19`, validating
-itself against RFC 7748 §6.1 test vectors and a cross-implementation
-check for the project's config key.
+A small, dependency-free curve25519 implementation used to derive REALITY
+public keys from a private key and, since milestone 6, to generate fresh
+REALITY private keys (`generate_private_key`: `os.urandom(32)` clamped per
+RFC 7748 — the same way `xray x25519` does it — then base64url-unpadded,
+matching Xray's key format exactly). It clamps the scalar and runs the
+Montgomery ladder over `2**255 - 19`, validating itself against RFC 7748
+§6.1 test vectors and a cross-implementation check for the project's
+config key.
 
 ### backend/core/allocator.py — the copied allocation brain
 
@@ -382,8 +423,8 @@ generated runtime config lives in `data/` (gitignored), next to `panel.db`.
   connection created at startup (main thread) is used from other threads;
   SQLite refuses that by default. Safe because the panel is a single
   low-traffic process.
-- `init_schema(conn)` — `CREATE TABLE IF NOT EXISTS users` (idempotent,
-  runs on every startup).
+- `init_schema(conn)` — `CREATE TABLE IF NOT EXISTS` for `users` and
+  `reality_keys` (idempotent, runs on every startup).
 - `seed(conn)` — inserts the demo user with `INSERT OR IGNORE`
   (idempotent; never duplicates). Its tags (`REALITY`/`XHTTP` inbounds,
   `OUTBOUND` outbound) mirror the typical config layout so the demo
@@ -398,6 +439,40 @@ generated runtime config lives in `data/` (gitignored), next to `panel.db`.
 - `row_to_dict(row)` — converts a row to a plain dict and decodes the JSON
   text columns back into real lists/dicts. All JSON encoding/decoding
   lives inside db.py; other layers see plain Python values.
+- `list_reality_keys(conn)` / `upsert_reality_key(conn, tag, key, ts)` —
+  storage for the panel-generated REALITY keys, keyed by inbound tag
+  (`INSERT ... ON CONFLICT DO UPDATE` covers both first generation and
+  rotation). Rows are never pruned when an inbound disappears from the
+  config: re-adding the tag restores the same key instead of breaking
+  existing clients.
+
+### backend/services/reality_service.py — the REALITY key owner
+
+Since milestone 6 the panel owns `realitySettings.privateKey`: every sync
+overwrites it with a key generated here and stored in SQLite, regardless
+of what the config file says. Keys are stable across restarts and syncs
+(clients would break otherwise) and change only via explicit rotation.
+
+- `key_map(conn)` — `{inbound_tag: private_key}`; the flat shape both
+  `xray_service.sync` (runtime injection) and the users router (share
+  links) consume.
+- `ensure_keys(conn, config)` — generates and stores a key for every
+  REALITY inbound tag missing from the DB, then returns the full map.
+  Idempotent; called from every sync so a newly added inbound gets a key
+  without any extra wiring.
+- `rotate_key(conn, tag)` — generates a fresh key, upserts it with a new
+  `created_at` (which doubles as the generation/rotation timestamp),
+  returns the private key. Callers must resync afterwards.
+- `public_key(conn, tag)` / `list_keys(conn, config)` — the read side:
+  the public key is always derived, never stored (a stored copy could
+  disagree with its source). `list_keys` iterates the config's REALITY
+  tags in config order; a tag without a stored key renders as nulls so
+  the admin sees that a key is pending.
+
+Why keys are keyed by inbound tag: the tag is an inbound's identity in
+an Xray config, so the key follows it — removing and re-adding an
+inbound with the same tag keeps its key, and duplicate tags (invalid in
+Xray anyway) would share one key harmlessly.
 
 ### frontend/ — the React SPA (milestone 4)
 
@@ -434,6 +509,13 @@ to the backend by absolute URL: `vite.config.js` proxies `/api/*` to
   client-side, and POSTs it; a Refresh button and the post-save path both
   re-fetch the panes instead of trusting local state. The config stays
   opaque here too: the page checks syntax, never structure.
+  Above the panes sits the REALITY keys section (`GET /api/reality`):
+  one row per REALITY inbound with its derived public key (copyable),
+  the key's generation/rotation time, and a Rotate button (plus Rotate
+  all when there is more than one inbound). Rotation confirms via
+  `window.confirm` — it breaks existing links and restarts Xray — then
+  re-fetches the keys and both panes, making the new key visible in the
+  runtime config immediately.
 - `src/components/ShareModal.jsx` — per-user share-link modal. Fetches
   `GET /api/users/{username}/links`, lists each inbound/outbound pair
   with the full `vless://` URI, a Copy button, and a QR toggle that
@@ -455,21 +537,37 @@ All tests use stdlib `unittest` (no extra deps).
 - `tests/test_config_service.py` — a tiny fixture config proves the
   fill: clients injected, rules + BLOCK catch-all replaced, disabled users
   excluded, unused VLESS inbounds emptied, everything else preserved
-  verbatim, and the caller's config dict never mutated.
+  verbatim, and the caller's config dict never mutated. Plus the REALITY
+  helpers: `reality_inbound_tags` detection and `apply_reality_keys`
+  (overwrite, missing-key warning, caller config untouched).
 - `tests/test_system.py` — tests the newer `xray_service` functions
   (`save_config` atomic write and directory creation; `status` for
   running/exited/none states; `load_runtime_config` and `runtime_mtime`
   for missing/valid files), plus the six router endpoints called directly
   with mocked dependencies (503 on missing config, correct
   summaries/tags, composite status response, config read 200/404,
-  runtime-config envelope 200/404, config write-and-sync flow).
+  runtime-config envelope 200/404, config write-and-sync flow), plus a
+  `TestSync` group that runs the real sync against temp files and a fresh
+  DB: the generated key lands in the runtime config, the user config file
+  keeps the operator's value, and an empty run writes nothing.
 - `tests/test_x25519.py` — validates the pure-Python X25519
   implementation against RFC 7748 §6.1 test vectors and a cross-
-  implementation check for the project's config private key.
+  implementation check for the project's config private key, plus
+  `generate_private_key` (32-byte base64url, clamped bits set, derives a
+  public key, unique across calls).
+- `tests/test_reality_service.py` — key generation/storage on a throwaway
+  DB: missing tags get keys, existing keys are reused, non-reality and
+  bare inbounds get none, rotation replaces key + timestamp, `list_keys`
+  orders by config and shows nulls for pending tags.
+- `tests/test_reality_router.py` — the three `/api/reality` endpoints
+  called directly: envelope and 404s, rotate-all fires per tag and syncs,
+  rotate-one returns the new public key and 404s for unknown or
+  non-REALITY tags.
 - `tests/test_share_service.py` — tests URI generation for raw/reality,
   xhttp, and ws transports; address resolution/fallback; wildcard
-  listen handling; and the `GET /api/users/{username}/links` router
-  endpoint (404/409/503/200 cases).
+  listen handling; the `GET /api/users/{username}/links` router
+  endpoint (404/409/503/200 cases); and that `reality_keys` overrides
+  the config's privateKey for `pbk` while absent tags fall back to it.
 
 ## Life of one request: POST /api/users
 
@@ -511,6 +609,36 @@ JSON text columns were chosen over join tables because the values are just
 strings at this scale. The trigger to normalize later: a traffic counter
 column written every few seconds, or frequent relational queries — see the
 "optimize when it hurts" rule below.
+
+## The reality_keys table
+
+| column | type | meaning |
+|---|---|---|
+| inbound_tag | TEXT PK | the REALITY inbound's tag — the key's identity |
+| private_key | TEXT | base64url X25519 scalar, Xray format |
+| created_at  | INTEGER | unix timestamp of generation *or* last rotation |
+
+One key per REALITY inbound, written by `reality_service`, injected into
+the runtime config by `config_service.apply_reality_keys` on every sync.
+The public key is never stored — it is derived on demand. Rotation is
+manual (`POST /api/reality/...`); nothing rotates keys automatically.
+
+## Life of one request: POST /api/reality/{tag}/rotate
+
+1. The Config tab's Rotate button (after `window.confirm`) sends
+   `POST /api/reality/GUNMU/rotate`.
+2. The router loads the config (404 when there is none) and checks the
+   tag is actually a REALITY inbound (404 otherwise — a silent no-op
+   would hide an operator mistake).
+3. `reality_service.rotate_key` generates a fresh X25519 key, upserts it
+   into `reality_keys` with a new `created_at`, and commits.
+4. `xray_service.sync(conn)` runs exactly as after a user edit: the key
+   is injected into the runtime config, the file is written, Xray
+   restarts serving the new key.
+5. The router derives the new public key from the stored private key and
+   returns `{inbound, public_key}`; the frontend re-fetches the keys and
+   both config panes. Old links now fail until clients re-import — which
+   is the point of rotation.
 
 ## Concepts that were confusing (and their answers)
 

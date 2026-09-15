@@ -171,5 +171,69 @@ class TestBuildConfig(unittest.TestCase):
         self.assertIn("OUTBOUND", tags)
 
 
+def _reality_config():
+    """A config exercising the private-key fill: one REALITY, one plain."""
+    return {
+        "inbounds": [
+            {
+                "tag": "REALITY",
+                "protocol": "vless",
+                "settings": {"clients": []},
+                "streamSettings": {
+                    "network": "raw",
+                    "security": "reality",
+                    "realitySettings": {
+                        "target": "example.com:443",
+                        "privateKey": "operator-key",
+                    },
+                },
+            },
+            {"tag": "PLAIN", "protocol": "vless", "settings": {"clients": []}},
+        ],
+        "outbounds": [],
+    }
+
+
+class TestRealityKeys(unittest.TestCase):
+    def test_reality_inbound_tags_found_by_settings_block(self):
+        tags = config_service.reality_inbound_tags(_reality_config())
+
+        self.assertEqual(tags, ["REALITY"])
+
+    def test_reality_tag_without_stream_settings_is_ignored(self):
+        config = {"inbounds": [{"tag": "BARE", "protocol": "vless"}], "outbounds": []}
+
+        self.assertEqual(config_service.reality_inbound_tags(config), [])
+
+    def test_apply_overwrites_user_key(self):
+        runtime, _ = config_service.build_config(_reality_config(), [])
+
+        warnings = config_service.apply_reality_keys(runtime, {"REALITY": "panel-key"})
+
+        reality = runtime["inbounds"][0]["streamSettings"]["realitySettings"]
+        self.assertEqual(reality["privateKey"], "panel-key")
+        self.assertEqual(reality["target"], "example.com:443")  # rest preserved
+        self.assertEqual(warnings, [])
+
+    def test_apply_missing_key_warns_and_keeps_config_value(self):
+        runtime, _ = config_service.build_config(_reality_config(), [])
+
+        warnings = config_service.apply_reality_keys(runtime, {})
+
+        self.assertEqual(
+            runtime["inbounds"][0]["streamSettings"]["realitySettings"]["privateKey"],
+            "operator-key",
+        )
+        self.assertEqual(len(warnings), 1)
+
+    def test_apply_does_not_touch_callers_config(self):
+        source = _reality_config()
+        runtime, _ = config_service.build_config(source, [])
+
+        config_service.apply_reality_keys(runtime, {"REALITY": "panel-key"})
+
+        self.assertEqual(source, _reality_config())
+
+
 if __name__ == "__main__":
     unittest.main()

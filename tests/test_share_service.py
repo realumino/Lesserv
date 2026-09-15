@@ -101,6 +101,36 @@ class TestShareService(unittest.TestCase):
         self.assertIn("flow=xtls-rprx-vision", reality["uri"])
         self.assertEqual(warnings, [])
 
+    def test_reality_keys_override_config_private_key(self):
+        """pbk is derived from the panel's stored key, not the config's."""
+        import base64
+
+        from backend.core.x25519 import derive_public_key
+
+        # RFC 7748 §6.1 Alice's private key — a known-good stand-in
+        alice_hex = "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"
+        alice_b64 = base64.urlsafe_b64encode(bytes.fromhex(alice_hex)).decode().rstrip("=")
+
+        links, _ = share_service.links_for_user(
+            self._user(["REALITY_IN"]), self._config(), "example.com",
+            reality_keys={"REALITY_IN": alice_b64},
+        )
+
+        expected = derive_public_key(alice_b64)
+        self.assertIn(f"pbk={expected}", links[0]["uri"])
+        # differs from the config key's pbk -> the override really won
+        self.assertNotIn("pbk=w_OZ1uUriCcd12KatYIFBJulAFDGNp9V1wL_XiQBt08", links[0]["uri"])
+
+    def test_reality_keys_fall_back_to_config_value(self):
+        """Tags absent from reality_keys use the config's own privateKey."""
+        links, warnings = share_service.links_for_user(
+            self._user(["REALITY_IN"]), self._config(), "example.com",
+            reality_keys={"OTHER_TAG": "whatever"},
+        )
+
+        self.assertIn("pbk=w_OZ1uUriCcd12KatYIFBJulAFDGNp9V1wL_XiQBt08", links[0]["uri"])
+        self.assertEqual(warnings, [])
+
     def test_xhttp_link(self):
         """XHTTP inbound uses address fallback, path, host, and mode."""
         links, warnings = share_service.links_for_user(

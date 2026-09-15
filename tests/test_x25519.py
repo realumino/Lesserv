@@ -7,7 +7,11 @@ Run:
 import base64
 import unittest
 
-from backend.core.x25519 import derive_public_key, public_key_from_raw
+from backend.core.x25519 import (
+    derive_public_key,
+    generate_private_key,
+    public_key_from_raw,
+)
 
 
 class TestX25519(unittest.TestCase):
@@ -59,6 +63,39 @@ class TestX25519(unittest.TestCase):
         self.assertIsNone(derive_public_key(""))
         self.assertIsNone(derive_public_key("not-base64!!!"))
         self.assertIsNone(derive_public_key("aW52YWxpZA"))  # only 8 bytes
+
+
+class TestGeneratePrivateKey(unittest.TestCase):
+    """Generated keys must be valid Xray-format X25519 private keys."""
+
+    def test_generated_key_is_32_bytes_base64url_unpadded(self):
+        """The encoding matches what `xray x25519` prints."""
+        key = generate_private_key()
+
+        self.assertNotIn("=", key)
+        self.assertNotIn("+", key)
+        self.assertNotIn("/", key)
+        self.assertEqual(len(base64.urlsafe_b64decode(key + "=" * (-len(key) % 4))), 32)
+
+    def test_generated_key_is_clamped(self):
+        """RFC 7748 clamping bits are set/cleared in the raw scalar."""
+        key = generate_private_key()
+        raw = base64.urlsafe_b64decode(key + "=" * (-len(key) % 4))
+
+        self.assertEqual(raw[0] & 248, raw[0])
+        self.assertEqual(raw[31] & 127, raw[31])
+        self.assertEqual(raw[31] | 64, raw[31])
+
+    def test_generated_key_derives_a_public_key(self):
+        """A generated key round-trips through the derivation path."""
+        public = derive_public_key(generate_private_key())
+
+        self.assertIsNotNone(public)
+        self.assertEqual(len(base64.urlsafe_b64decode(public + "=" * (-len(public) % 4))), 32)
+
+    def test_generated_keys_are_unique(self):
+        """Two generations must practically never collide."""
+        self.assertNotEqual(generate_private_key(), generate_private_key())
 
 
 if __name__ == "__main__":
