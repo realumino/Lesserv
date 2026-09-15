@@ -316,6 +316,26 @@ class TestSync(unittest.TestCase):
             "operator-key",
         )
 
+    def test_sync_puts_block_first_and_writes_no_catch_all_rule(self):
+        from backend import db
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = db.connect(db_path)
+        db.init_schema(conn)
+        self.addCleanup(conn.close)
+
+        config = self._reality_config()
+        config["outbounds"] = [{"tag": "EXIT", "protocol": "freedom"}]
+        xray_service.save_config(config)
+        xray_service.sync(conn)
+
+        runtime = xray_service.load_runtime_config()
+        self.assertEqual(runtime["outbounds"][0]["tag"], "BLOCK")
+        for rule in runtime["routing"]["rules"]:
+            matchers = [k for k in rule if k != "outboundTag"]
+            self.assertTrue(matchers, "matcher-less rule: %r" % rule)
+
     def test_sync_skips_when_no_config(self):
         from backend import db
 

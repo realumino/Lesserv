@@ -16,13 +16,24 @@ replacing two places in it:
    `realitySettings` block — always replaced with the panel-generated X25519
    key stored in `data/panel.db` (table `reality_keys`), whether the config
    carries one or not. Rotation happens only via the API.
+4. `outbounds` — ORDER only: BLOCK is guaranteed to be the first outbound
+   (injected as `blackhole` when absent). Xray falls back to the first
+   outbound when no rule matches, so BLOCK first = catch-all. A rule with
+   only `outboundTag` is an Xray error (rules need a matcher), so no
+   catch-all rule is ever generated.
 
 Nothing else is ever generated, validated, or interpreted. The filled
 result the panel writes is called the "runtime config".
 
-## Current status: milestone 6 — REALITY key management (done)
+## Current status: milestone 7 — routing fix, BLOCK-first default (done)
 
-Milestones 0–5 are done. Latest: REALITY key management — the panel now
+Milestones 0–6 are done. Latest: the matcher-less catch-all rule
+(`{"outboundTag": "BLOCK"}`) is gone — Xray rejects rules without a
+matcher. `config_service.ensure_block_first` now guarantees BLOCK is the
+first outbound, and Xray's own "no rule matched -> first outbound" fallback
+acts as the catch-all.
+
+Milestone 6: REALITY key management — the panel now
 owns `realitySettings.privateKey`: every sync generates an X25519 key per
 REALITY inbound (stored in the new `reality_keys` SQLite table), injects
 it into the runtime config, and share links derive `pbk` from that stored
@@ -40,4 +51,5 @@ with Rotate buttons.
 | 5 | Share links (vless:// URIs): per-user links, copy/QR, REALITY public key derivation | done |
 | — | Minor improvements, no fixed scope (template→config / generated→runtime config rename) | done |
 | 6 | REALITY key management: auto-generated per-inbound X25519 keys in SQLite, injected at sync; share links use the stored key; rotate endpoints + Config-tab UI | done |
+| 7 | Routing fix: matcher-less catch-all rule removed (Xray error); BLOCK is now guaranteed first outbound = Xray's own catch-all | done |
 | later | Xray gRPC stats API, auth, expiry/quota jobs, Docker | deferred |

@@ -73,8 +73,8 @@ def seed(conn):
 
     Why these specific tags: they mirror the REALITY/XHTTP inbound and
     OUTBOUND/BLOCK outbound layout of a typical config, so the demo
-    user's client actually matches a routing rule instead of falling
-    into the BLOCK catch-all.
+    user's client actually matches a routing rule instead of falling into
+    the BLOCK default route (first outbound).
     """
     conn.execute(
         """

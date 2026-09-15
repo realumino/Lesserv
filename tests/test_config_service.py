@@ -18,7 +18,7 @@ def _config():
     """
     return {
         "log": {"loglevel": "debug"},
-        "routing": {"rules": [{}]},
+        "routing": {"rules": [{"domain": ["example.com"], "outboundTag": "OUTBOUND"}]},
         "inbounds": [
             {
                 "tag": "REALITY",
@@ -64,9 +64,8 @@ class TestBuildConfig(unittest.TestCase):
         self.assertEqual(
             config["routing"]["rules"],
             [
-                {},
+                {"domain": ["example.com"], "outboundTag": "OUTBOUND"},
                 {"user": ["regexp:.*@OUTBOUND$"], "outboundTag": "OUTBOUND"},
-                {"outboundTag": "BLOCK"},
             ],
         )
         self.assertEqual(warnings, [])
@@ -86,7 +85,11 @@ class TestBuildConfig(unittest.TestCase):
         config, _ = config_service.build_config(source, users)
 
         self.assertEqual(config["log"], source["log"])
-        self.assertEqual(config["outbounds"], source["outbounds"])
+        # outbound ORDER is panel-owned (BLOCK first), so compare as sets
+        self.assertEqual(
+            sorted(config["outbounds"], key=lambda o: o.get("tag", "")),
+            sorted(source["outbounds"], key=lambda o: o.get("tag", "")),
+        )
         self.assertEqual(config["inbounds"][0]["port"], 443)
 
     def test_unused_vless_inbound_gets_empty_clients(self):
@@ -110,23 +113,53 @@ class TestBuildConfig(unittest.TestCase):
             [{"id": "u1", "email": "alice@OUTBOUND"}],
         )
 
-    def test_block_auto_injected_and_catch_all_present(self):
+    def test_block_auto_injected_first_and_no_catch_all_rule(self):
         source = _config()
         source["outbounds"] = [{"tag": "OUTBOUND", "protocol": "wireguard"}]
 
         config, warnings = config_service.build_config(source, [])
 
-        tags = [o["tag"] for o in config["outbounds"]]
-        self.assertIn("BLOCK", tags)
+        self.assertEqual(config["outbounds"][0]["tag"], "BLOCK")
         self.assertNotIn("no BLOCK", warnings)
+        # generated rules exist even with zero users (one per outbound tag);
+        # what matters here: no matcher-less catch-all rule anywhere
+        for rule in config["routing"]["rules"]:
+            matchers = [k for k in rule if k != "outboundTag"]
+            self.assertTrue(matchers, "matcher-less rule: %r" % rule)
+
+    def test_no_rule_lacks_a_matcher(self):
+        source = _config()
+        users = [_user("alice", ["REALITY"], ["OUTBOUND"], {"alice@OUTBOUND": "u1"})]
+
+        config, _ = config_service.build_config(source, users)
+
+        for rule in config["routing"]["rules"]:
+            matchers = [k for k in rule if k != "outboundTag"]
+            self.assertTrue(
+                matchers, "matcher-less rule: %r (Xray rejects these)" % rule
+            )
+
+    def test_existing_block_moved_to_first(self):
+        source = _config()  # outbounds: [OUTBOUND, BLOCK]
+
+        config, _ = config_service.build_config(source, [])
+
         self.assertEqual(
-            config["routing"]["rules"],
-            [
-                {},
-                {"user": ["regexp:.*@OUTBOUND$"], "outboundTag": "OUTBOUND"},
-                {"outboundTag": "BLOCK"},
-            ],
+            [o["tag"] for o in config["outbounds"]], ["BLOCK", "OUTBOUND"]
         )
+
+    def test_customized_block_dict_is_preserved(self):
+        source = _config()
+        customized = {
+            "tag": "BLOCK",
+            "protocol": "blackhole",
+            "settings": {"response": {"type": "http"}},
+        }
+        source["outbounds"] = [customized, {"tag": "OUTBOUND", "protocol": "wireguard"}]
+
+        config, _ = config_service.build_config(source, [])
+
+        self.assertEqual(config["outbounds"][0], customized)
 
     def test_missing_routing_is_auto_created(self):
         source = _config()

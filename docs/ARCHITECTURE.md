@@ -247,17 +247,21 @@ This is what makes the milestone testable without a running server.
   per inbound. `network` and `security` come from `streamSettings` (empty
   string when absent) so the frontend can label checkboxes.
 - `outbound_tags(config)` — returns the tag strings of the outbounds for
-  the allocator (which only needs tags). BLOCK is excluded because it is a
-  system catch-all, not a routable exit node — no `regexp:.*@BLOCK$` rule
+  the allocator (which only needs tags). BLOCK is excluded because it is
+  the default route, not a routable exit node — no `regexp:.*@BLOCK$` rule
   is ever generated.
 - `outbound_summaries(config)` — returns `[{tag, protocol}]` for the
   frontend via `/api/outbounds`.
-- `clients_and_rules(users, config)` — calls the allocator, then appends
-  the trailing catch-all rule `{"outboundTag": "BLOCK"}` that drops any
-  traffic whose email matched no rule. The catch-all lives here (not in
-  the allocator) because it is panel policy and the allocator must stay a
-  verbatim copy. BLOCK is guaranteed to exist by this point because
-  `build_config` auto-injects it.
+- `clients_and_rules(users, config)` — calls the allocator and returns its
+  output unchanged. No catch-all rule is appended: an Xray routing rule
+  needs at least one matcher (`user`, `domain`, `ip`, …), so a rule
+  carrying only an `outboundTag` is an error, not a catch-all. Unmatched
+  traffic is handled by Xray itself, which falls back to the FIRST
+  outbound — and `build_config` guarantees that outbound is BLOCK.
+- `ensure_block_first(outbounds)` — returns the outbound list with BLOCK
+  guaranteed at index 0, creating `{"tag": "BLOCK", "protocol":
+  "blackhole"}` when none exists. An operator-customized BLOCK dict is
+  kept verbatim — only its position changes.
 - `reality_inbound_tags(config)` — tags of every inbound whose
   `streamSettings` contains a `realitySettings` dict. Detection is by the
   settings block, not `security == "reality"`, so a misspelled security
@@ -268,12 +272,13 @@ This is what makes the milestone testable without a running server.
   key is missing. Kept separate from `build_config` so that function keeps
   its original signature and tests; `xray_service.sync` composes the two.
 - `build_config(config, users)` — the entry point: `copy.deepcopy`s the
-  config, auto-injects a `{"tag": "BLOCK", "protocol": "blackhole"}`
-  outbound when none exists, replaces `settings.clients` of every VLESS
-  inbound (an empty list when nobody is allocated to it; non-VLESS inbounds
-  untouched) and appends generated rules to `routing.rules` (auto-creating
-  the `routing` section when absent, extending instead of replacing so
-  pre-existing user rules survive). Returns `(runtime, warnings)`.
+  config, forces BLOCK to be the first outbound (Xray's "no rule matched →
+  first outbound" fallback is the panel's catch-all), replaces
+  `settings.clients` of every VLESS inbound (an empty list when nobody is
+  allocated to it; non-VLESS inbounds untouched) and appends generated
+  rules to `routing.rules` (auto-creating the `routing` section when
+  absent, extending instead of replacing so pre-existing user rules
+  survive). Returns `(runtime, warnings)`.
 
 Everything else in the config is preserved exactly — the opaque-config
 rule. The copy also guarantees the caller's config dict survives
@@ -394,8 +399,8 @@ I/O: it takes user permissions, inbound summaries, outbound tags and a
 uuid map, and returns `clients_by_inbound`, `routing_rules`, `warnings`.
 One `regexp:.*@TAG$` rule per outbound tag; one `{id, email}` client per
 allowed (user, inbound, outbound) triple; non-VLESS inbounds and missing
-uuids produce warnings. All panel policy (active-only filtering, catch-all
-rule) lives in config_service, never here.
+uuids produce warnings. All panel policy (active-only filtering, BLOCK-first default)
+lives in config_service, never here.
 
 ### backend/settings.py — paths the operator can override
 
@@ -428,7 +433,8 @@ generated runtime config lives in `data/` (gitignored), next to `panel.db`.
 - `seed(conn)` — inserts the demo user with `INSERT OR IGNORE`
   (idempotent; never duplicates). Its tags (`REALITY`/`XHTTP` inbounds,
   `OUTBOUND` outbound) mirror the typical config layout so the demo
-  client actually matches a routing rule instead of the BLOCK catch-all.
+  client actually matches a routing rule instead of falling into the BLOCK
+  default route (first outbound).
 - `list_users(conn)` / `get_user(conn, username)` — SELECTs. `get_user`
   returns None when missing.
 - `create_user(conn, user)` / `replace_user(conn, user)` /
@@ -535,8 +541,9 @@ All tests use stdlib `unittest` (no extra deps).
   per inbound, one rule per outbound tag, warnings for non-VLESS inbounds
   and missing uuids.
 - `tests/test_config_service.py` — a tiny fixture config proves the
-  fill: clients injected, rules + BLOCK catch-all replaced, disabled users
-  excluded, unused VLESS inbounds emptied, everything else preserved
+  fill: clients injected, generated rules appended (no matcher-less
+  catch-all — Xray rejects those), BLOCK forced to the first outbound,
+  disabled users excluded, unused VLESS inbounds emptied, everything else preserved
   verbatim, and the caller's config dict never mutated. Plus the REALITY
   helpers: `reality_inbound_tags` detection and `apply_reality_keys`
   (overwrite, missing-key warning, caller config untouched).

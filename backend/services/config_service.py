@@ -63,8 +63,9 @@ def inbound_summaries(config):
 def outbound_tags(config):
     """Return the tag strings of every regular outbound (BLOCK excluded).
 
-    Why BLOCK is excluded: it is a system catch-all, not a real exit node;
-    the allocator must not generate a regexp:.*@BLOCK$ rule for it.
+    Why BLOCK is excluded: it is the default route (guaranteed first by
+    ensure_block_first), not a real exit node; the allocator must not
+    generate a regexp:.*@BLOCK$ rule for it.
     """
     return [o["tag"] for o in config["outbounds"] if o["tag"] != "BLOCK"]
 
@@ -132,18 +133,36 @@ def apply_reality_keys(runtime, keys):
 def clients_and_rules(users, config):
     """Run the allocator; return (clients_by_inbound, routing_rules, warnings).
 
-    Why the BLOCK catch-all is appended here and not inside the allocator:
-    the allocator is a verbatim copy from the sibling repo; panel policy
-    stays in this module. The catch-all drops traffic whose email matched
-    no per-outbound rule. BLOCK is guaranteed to exist by the time this
-    runs (build_config auto-injects it if absent), so there is no else.
+    Why no catch-all rule is appended: an Xray routing rule needs at least
+    one matcher (user, domain, ip, ...), so a rule carrying only an
+    outboundTag is an error, not a catch-all. Unmatched traffic is already
+    handled by Xray itself, which falls back to the FIRST outbound — the
+    panel guarantees that outbound is BLOCK (see ensure_block_first).
     """
-    tags = outbound_tags(config)
-    clients, rules, warnings = allocator.allocate(
-        user_permissions(users), inbound_summaries(config), tags, uuids_map(users)
+    return allocator.allocate(
+        user_permissions(users),
+        inbound_summaries(config),
+        outbound_tags(config),
+        uuids_map(users),
     )
-    rules.append({"outboundTag": "BLOCK"})
-    return clients, rules, warnings
+
+
+def ensure_block_first(outbounds):
+    """Return the outbound list with a blackhole BLOCK guaranteed at index 0.
+
+    Why first: when no routing rule matches, Xray uses the FIRST outbound
+    as the default. Placing BLOCK there makes it the catch-all for traffic
+    whose email matched no per-outbound rule — replacing the old
+    matcher-less catch-all rule, which Xray rejects as an error.
+
+    Why the existing BLOCK dict is kept verbatim: the operator may have
+    customized it (extra settings, response); only its position changes.
+    """
+    block = next((o for o in outbounds if o.get("tag") == "BLOCK"), None)
+    if block is None:
+        block = {"tag": "BLOCK", "protocol": "blackhole"}
+    rest = [o for o in outbounds if o.get("tag") != "BLOCK"]
+    return [block] + rest
 
 
 def build_config(config, users):
@@ -156,21 +175,16 @@ def build_config(config, users):
     Why routing is optional: novice operators may omit the routing section
     entirely; the panel creates it automatically. When the user does supply
     their own routing.rules, the generated rules are appended after them so
-    user-authored rules stay at the front and the BLOCK catch-all still
-    trails at the end.
+    user-authored rules stay at the front.
 
-    Why BLOCK is auto-injected: every Xray config needs a catch-all
-    outbound; requiring the user to add one manually is a papercut. The
-    panel injects a blackhole BLOCK outbound when none exists.
+    Why BLOCK is forced to the first outbound: an Xray rule needs at least
+    one matcher, so the old matcher-less catch-all rule was an error. Xray's
+    own fallback — "no rule matched -> first outbound" — replaces it, and
+    ensure_block_first guarantees that fallback is BLOCK (injecting a
+    blackhole BLOCK outbound when none exists).
     """
     runtime = copy.deepcopy(config)
-    block_exists = any(
-        o.get("tag") == "BLOCK" for o in runtime.get("outbounds", [])
-    )
-    if not block_exists:
-        runtime.setdefault("outbounds", []).append(
-            {"tag": "BLOCK", "protocol": "blackhole"}
-        )
+    runtime["outbounds"] = ensure_block_first(runtime.get("outbounds", []))
     clients, rules, warnings = clients_and_rules(users, runtime)
     for inbound in runtime["inbounds"]:
         if inbound["protocol"] != "vless":

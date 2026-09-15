@@ -26,11 +26,14 @@ wrong documentation is worse than none.
 - Backend: FastAPI + plain `sqlite3` (no ORM). JSON columns for
   allowed_inbounds / allowed_outbounds / uuids.
 - v1 user sync = regenerate full runtime config + restart Xray. No Xray gRPC API in v1 (deferred).
-- The user's Xray config is opaque EXCEPT three panel-owned places the
-  panel FILLS: routing.rules, VLESS inbounds' settings.clients, and
-  every inbound's streamSettings.realitySettings.privateKey (panel-
+- The user's Xray config is opaque EXCEPT four panel-owned places the
+  panel FILLS: routing.rules, VLESS inbounds' settings.clients, every
+  inbound's streamSettings.realitySettings.privateKey (panel-
   generated X25519 key, stored in SQLite — the config file's value is
-  ignored). Never generate, validate, or interpret anything else.
+  ignored), and the ORDER of outbounds (BLOCK is guaranteed first:
+  Xray falls back to the first outbound when no rule matches, which is
+  the catch-all — a rule with only outboundTag is an Xray error, never
+  generated). Never generate, validate, or interpret anything else.
 - Only VLESS. UUID per (user, outbound) pair, stable across changes.
   REALITY keys are per inbound tag, stable across syncs, changed only
   by explicit rotation.
