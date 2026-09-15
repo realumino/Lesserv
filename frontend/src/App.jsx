@@ -4,6 +4,7 @@ import StatusBar from './components/StatusBar'
 import UserTable from './components/UserTable'
 import UserForm from './components/UserForm'
 import ConfigPage from './components/ConfigPage'
+import ShareModal from './components/ShareModal'
 
 /**
  * Root component: owns all shared state (users, status, template metadata)
@@ -21,6 +22,7 @@ export default function App() {
   const [status, setStatus] = useState(null)
   // undefined = form closed, null = create mode, object = edit mode
   const [formTarget, setFormTarget] = useState(undefined)
+  const [shareTarget, setShareTarget] = useState(undefined)
   const [notice, setNotice] = useState(null)
 
   useEffect(() => {
@@ -50,14 +52,16 @@ export default function App() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-4">
+    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-5">
       <StatusBar status={status} />
       <nav className="flex gap-2">
         <TabButton label="Users" active={tab === 'users'} onClick={() => setTab('users')} />
         <TabButton label="Config" active={tab === 'config'} onClick={() => setTab('config')} />
       </nav>
       {notice && (
-        <p className="bg-red-900/50 border border-red-700 rounded px-3 py-2 text-sm">{notice}</p>
+        <p className="bg-[#ffecea] border border-[#ff453a]/20 text-[#ff3b30] rounded-xl px-4 py-2.5 text-sm font-medium">
+          {notice}
+        </p>
       )}
       {tab === 'users' ? (
         <UserTable
@@ -65,6 +69,7 @@ export default function App() {
           error={usersError}
           onAdd={() => setFormTarget(null)}
           onEdit={setFormTarget}
+          onShare={setShareTarget}
           onDelete={onDelete}
         />
       ) : (
@@ -79,6 +84,12 @@ export default function App() {
           onSaved={onSaved}
         />
       )}
+      {shareTarget !== undefined && (
+        <ShareModal
+          user={shareTarget}
+          onClose={() => setShareTarget(undefined)}
+        />
+      )}
     </div>
   )
 }
@@ -88,8 +99,10 @@ function TabButton({ label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-1.5 rounded text-sm font-medium ${
-        active ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+      className={`px-5 py-2 rounded-full text-sm font-medium transition-colors ${
+        active
+          ? 'bg-apple-blue text-white shadow-sm'
+          : 'bg-apple-card text-apple-muted hover:bg-apple-gray-surface hover:text-apple-text'
       }`}
     >
       {label}

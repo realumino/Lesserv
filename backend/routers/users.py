@@ -8,9 +8,9 @@ and the service layer.
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from backend import db
-from backend.models import UserCreate, UserOut, UserUpdate
-from backend.services import user_service
+from backend import db, settings
+from backend.models import UserCreate, UserLinksOut, UserOut, UserUpdate
+from backend.services import share_service, user_service, xray_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -63,3 +63,30 @@ def delete_user(username: str, conn=Depends(get_db)):
     """Delete a user; 404 when missing. 204 means success with no body."""
     if not user_service.delete_user(conn, username):
         raise HTTPException(status_code=404, detail="user not found")
+
+
+@router.get("/{username}/links", response_model=UserLinksOut)
+def get_user_links(username: str, conn=Depends(get_db)):
+    """Return VLESS share links for one user.
+
+    Why this is read-only: links are a view over the existing template and
+    user records; generating them must not restart Xray or touch the DB.
+    """
+    user = db.get_user(conn, username)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    template = xray_service.load_template()
+    if template is None:
+        raise HTTPException(status_code=503, detail="template not loaded")
+
+    if not share_service.has_usable_address(template, settings.SERVER_ADDRESS):
+        raise HTTPException(
+            status_code=409,
+            detail="server address not configured (set LESSERV_SERVER_ADDRESS)",
+        )
+
+    links, warnings = share_service.links_for_user(
+        user, template, settings.SERVER_ADDRESS
+    )
+    return {"username": username, "links": links, "warnings": warnings}

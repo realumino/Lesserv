@@ -39,3 +39,5 @@ export const fetchConfig = () => request('/config')
 export const fetchGeneratedConfig = () => request('/config/generated')
 export const postConfig = (body) =>
   request('/config', { method: 'POST', body: JSON.stringify(body) })
+export const fetchUserLinks = (username) =>
+  request(`/users/${encodeURIComponent(username)}/links`)

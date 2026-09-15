@@ -4,9 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lesserv</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['DM Sans', 'ui-sans-serif', 'sans-serif', 'system-ui'],
+            },
+            colors: {
+              apple: {
+                bg: '#f2f2f7',
+                card: '#ffffff',
+                border: '#e5e5ea',
+                text: '#1d1d1f',
+                muted: '#6e6e73',
+                blue: '#007aff',
+                'blue-hover': '#0064d6',
+                green: '#34c759',
+                red: '#ff3b30',
+                gray: '#8e8e93',
+                'gray-surface': '#f7f7fa',
+              },
+            },
+          },
+        },
+      }
+    </script>
   </head>
-  <body class="bg-gray-900 text-gray-100">
+  <body class="bg-apple-bg text-apple-text antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

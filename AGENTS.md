@@ -35,8 +35,9 @@ wrong documentation is worse than none.
   backend/services/* (business logic: user_service, config_service,
   xray_service), backend/core/allocator.py (copy of vless_allocator from
   sibling repo xray_multi_inout_generator), backend/settings.py
-  (env-overridable paths: template/config/binary). Template goes in
-  config/ (gitignored dir, user-provided), generated config in data/.
+  (env-overridable: template path, generated config path, Xray binary,
+  server address for share links). Template goes in config/
+  (gitignored dir, user-provided), generated config in data/.
 
 ## Conventions (user requirement — non-negotiable)
 
